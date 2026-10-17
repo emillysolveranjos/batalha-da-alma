@@ -27,6 +27,12 @@
       #embed { position: fixed; right: 8px; bottom: 8px; z-index: 7; display: none; border: 2px solid #fff; background: #000; }
       #status { position: absolute; left: 10px; bottom: 10px; z-index: 6; display: none; font-size: 20px; color: #ffd84a; background: rgba(0,0,0,0.7); padding: 2px 8px; }
       #help { position: absolute; top: 8px; left: 10px; font-size: 18px; opacity: 0.6; z-index: 6; }
+      #gmbar { position: absolute; top: 30px; left: 10px; right: 90px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; z-index: 6; }
+      #gmbar input { font: 20px VT323, monospace; background: #000; color: #fff; border: 2px solid #ffd84a; padding: 2px 8px; width: min(320px, 40vw); }
+      #gmbar button { font: 20px VT323, monospace; background: #000; color: #ffd84a; border: 2px solid #ffd84a; padding: 1px 10px; cursor: pointer; }
+      #gmbar button:hover { background: #3a2c00; }
+      #gmInfo { font-size: 18px; color: #ffd84a; opacity: 0.85; }
+      .hidden { display: none !important; }
       /* golpe do LUTAR */
       #slash { position: absolute; left: 270px; width: 100px; height: 100px; opacity: 0; transform-origin: top right;
         background: linear-gradient(135deg, transparent 46%, #ff2020 47%, #ffb0b0 50%, #ff2020 53%, transparent 54%); }
@@ -57,6 +63,13 @@
       </div>
     </div>
     <div id="help"></div>
+    <div id="gmbar" class="hidden">
+      <input id="gmReply" maxlength="140" placeholder="Responder na caixa… (Enter)" />
+      <button id="gmNext" title="Novo turno com os mesmos ataques">▶ Próximo turno</button>
+      <button id="gmPhase" title="Passa para a próxima fase salva e começa o turno">⏭ Próxima fase</button>
+      <button id="gmEnd" title="Encerra a batalha para todos">■ Encerrar</button>
+      <span id="gmInfo"></span>
+    </div>
     <div id="top">
       <button id="mute" title="Som">♪</button>
       <button id="close" title="Fechar">✕</button>

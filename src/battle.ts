@@ -5,6 +5,7 @@ import { BattleEngine, ChoiceResult, H, MenuData, W } from "./engine";
 import { MusicHost, MusicPlayer } from "./audio";
 import { CH_FILE_PROGRESS, CH_FILE_READY, CH_FILE_REQ, ProgressMsg, fileUrl } from "./files";
 import { parseSource } from "./media";
+import { advancePhase, newBattleState } from "./gm";
 import {
   AttackType,
   BATTLE_KEY,
@@ -13,12 +14,14 @@ import {
   CH_ACTION,
   CH_EVENT,
   CH_HP,
+  CH_REPLY,
   CH_SOUL,
   CONFIG_KEY,
   HP_KEY,
   ITEMS_KEY,
   MODAL_ID,
   ActionMsg,
+  describeAction,
   SOUL_INFO,
   SoulMode,
   defaultAttack,
@@ -36,7 +39,8 @@ const focusEl = $("focus");
 const note = $("note");
 const noteInput = $<HTMLInputElement>("noteInput");
 const params = new URLSearchParams(location.search);
-const isTest = params.has("teste");
+// fora do Owlbear (demonstração) também funciona como teste sozinho
+const isTest = params.has("teste") || !OBR.isAvailable;
 
 let engine: BattleEngine | null = null;
 const music = new MusicPlayer();
@@ -48,6 +52,7 @@ let monsterHp = 0;
 let monsterHpMax = 0;
 let turnNumber = 1;
 let usedItems: Record<string, number> = {};
+let testCfg: BattleConfig | null = null;
 let muted = false;
 try {
   muted = localStorage.getItem("batalha-mute") === "1";
@@ -202,6 +207,7 @@ function startEngine(cfg: BattleConfig, seed: number, spectator: boolean, hp: nu
     playerName: me.name,
     hp,
     menu: buildMenu(cfg),
+    waitText: isTest ? "* (Teste) Responda na barra acima, ou Z / ▶ para continuar." : undefined,
     onFight: fightFx,
     onHp: (v) => {
       if (OBR.isAvailable && !isTest) OBR.player.setMetadata({ [HP_KEY]: v });
@@ -235,6 +241,7 @@ function startEngine(cfg: BattleConfig, seed: number, spectator: boolean, hp: nu
     onGesture: () => music.resume(),
     onConfirmIdle: () => {
       if (pendingChoice) sendChoice();
+      else if (isTest) testNewTurn(false);
     },
   });
   // a música só reinicia se o mestre trocou a faixa ou o volume
@@ -249,9 +256,78 @@ function startEngine(cfg: BattleConfig, seed: number, spectator: boolean, hp: nu
   setupScene(cfg);
   $("help").textContent = helpText(cfg.alma.modo, spectator);
   engine.start();
+  if (!OBR.isAvailable) (window as unknown as { engine: BattleEngine | null }).engine = engine; // depuração
   layout();
   checkFocus();
 }
+
+// ---------- barra do mestre (assistindo ou testando) ----------
+const gmInfo = $("gmInfo");
+const gmReply = $<HTMLInputElement>("gmReply");
+
+function showGmBar() {
+  $("gmbar").classList.remove("hidden");
+  $("help").classList.add("hidden");
+  if (isTest) $("gmEnd").textContent = "✕ Fechar teste";
+}
+
+/** Teste sozinho: começa outro turno localmente (mesmos ataques ou próxima fase). */
+function testNewTurn(nextPhase: boolean) {
+  if (!testCfg) return;
+  const cfg = structuredClone(testCfg);
+  if (nextPhase) {
+    const nome = advancePhase(cfg);
+    if (!nome) {
+      gmInfo.textContent = "Nenhuma fase salva — carregue um preset ou salve turnos.";
+      return;
+    }
+    testCfg = structuredClone(cfg);
+    gmInfo.textContent = `Fase: ${nome}`;
+  }
+  turnNumber++;
+  const hp = engine && engine.hp > 0 ? engine.hp : cfg.mecanica.hpMax;
+  startEngine(cfg, Math.floor(Math.random() * 1e9), false, hp);
+}
+
+/** Mestre na batalha de verdade: grava o novo turno para todos. */
+async function gmNewTurn(nextPhase: boolean) {
+  const room = await OBR.room.getMetadata();
+  const cfg = normalizeConfig(room[CONFIG_KEY]);
+  const st = room[BATTLE_KEY] as BattleState | undefined;
+  if (nextPhase) {
+    const nome = advancePhase(cfg);
+    if (!nome) {
+      gmInfo.textContent = "Nenhuma fase salva — carregue um preset ou salve turnos.";
+      return;
+    }
+    gmInfo.textContent = `Fase: ${nome}`;
+  }
+  await OBR.room.setMetadata({ [CONFIG_KEY]: cfg, [BATTLE_KEY]: newBattleState(cfg, st, st?.participantes ?? []) });
+}
+
+function sendReply() {
+  const texto = gmReply.value.trim();
+  if (!texto) return;
+  gmReply.value = "";
+  if (OBR.isAvailable && !isTest) OBR.broadcast.sendMessage(CH_REPLY, { texto }, { destination: "ALL" });
+  else engine?.showReply(texto);
+}
+gmReply.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") sendReply();
+  e.stopPropagation();
+});
+$("gmNext").onclick = () => (isTest || !OBR.isAvailable ? testNewTurn(false) : gmNewTurn(false));
+$("gmPhase").onclick = () => (isTest || !OBR.isAvailable ? testNewTurn(true) : gmNewTurn(true));
+$("gmEnd").onclick = async () => {
+  if (isTest || !OBR.isAvailable) {
+    music.stop();
+    if (OBR.isAvailable) OBR.modal.close(MODAL_ID);
+    return;
+  }
+  const room = await OBR.room.getMetadata();
+  const st = room[BATTLE_KEY] as BattleState | undefined;
+  if (st) await OBR.room.setMetadata({ [BATTLE_KEY]: { ...st, ativo: false } });
+};
 
 // ---------- arquivos de áudio do mestre ----------
 const statusEl = $("status");
@@ -365,9 +441,13 @@ async function runInOwlbear() {
     return typeof v === "number" ? Math.min(v, cfg.mecanica.hpMax) : cfg.mecanica.hpMax;
   };
 
+  OBR.broadcast.onMessage(CH_REPLY, (ev) => engine?.showReply(String((ev.data as { texto: string }).texto || "")));
+
   if (isTest) {
     const room = await OBR.room.getMetadata();
     const cfg = normalizeConfig(room[CONFIG_KEY]);
+    testCfg = structuredClone(cfg);
+    showGmBar();
     monsterHpMax = monsterHp = cfg.monstro.hp;
     usedItems = {};
     startEngine(cfg, Math.floor(Math.random() * 1e9), false, cfg.mecanica.hpMax);
@@ -390,6 +470,7 @@ async function runInOwlbear() {
     const cfg = cfg0;
     const inBattle = !st.participantes?.length || st.participantes.includes(me.id);
     const spectator = me.gm || !inBattle;
+    if (me.gm) showGmBar();
     const hp = engine && !engine.opt.spectator ? Math.min(engine.hp, cfg.mecanica.hpMax) : savedHp(cfg);
     startEngine(cfg, st.seed, spectator, hp);
   };
@@ -401,6 +482,11 @@ async function runInOwlbear() {
     if (!engine || d.id === me.id) return;
     engine.others.set(d.id, { ...d, seen: performance.now() });
   });
+  if (me.gm) {
+    OBR.broadcast.onMessage(CH_ACTION, (ev) => {
+      gmInfo.textContent = describeAction(ev.data as ActionMsg);
+    });
+  }
   OBR.broadcast.onMessage(CH_HP, (ev) => {
     const d = ev.data as { alvo: string[]; hp: number | "max" };
     if (!engine || engine.opt.spectator) return;
@@ -423,10 +509,10 @@ function runDemo() {
   if (params.has("hitbox")) cfg.mecanica.mostrarHitbox = true;
   if (params.has("rapido")) cfg.ataques.forEach((a) => (a.duracao = 1));
   monsterHpMax = monsterHp = cfg.monstro.hp;
+  testCfg = structuredClone(cfg);
+  showGmBar();
   me.name = "Jogador";
   startEngine(cfg, 12345, params.has("assistir"), cfg.mecanica.hpMax);
-  // acesso para depuração no console do navegador
-  (window as unknown as { engine: BattleEngine | null }).engine = engine;
 }
 
 if (OBR.isAvailable) OBR.onReady(runInOwlbear);

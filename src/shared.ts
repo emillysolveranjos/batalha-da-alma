@@ -11,6 +11,7 @@ export const CH_HP = `${ID}/set-hp`;
 export const CH_EVENT = `${ID}/event`;
 export const ITEMS_KEY = `${ID}/itens-usados`; // metadados do jogador: { nomeDoItem: quantosUsou }
 export const CH_ITEMS_RESET = `${ID}/repor-itens`;
+export const CH_REPLY = `${ID}/resposta`; // o mestre responde na caixa de texto dos jogadores
 
 export interface Item {
   nome: string;
@@ -67,7 +68,8 @@ export type AttackType =
   | "arco"
   | "estacas"
   | "varredura"
-  | "fios";
+  | "fios"
+  | "pancada";
 
 export interface AttackConfig {
   tipo: AttackType;
@@ -189,6 +191,7 @@ export const ATTACK_INFO: Record<AttackType, { nome: string; desc: string }> = {
   estacas: { nome: "Estacas", desc: "O chão (ou o teto) pisca e uma estaca sobe naquele ponto." },
   varredura: { nome: "Varredura", desc: "Barras da altura da caixa atravessam tudo. Use azul ou laranja; branco alterna os dois." },
   fios: { nome: "Fios", desc: "Projéteis correm pelas 3 linhas horizontais. Feito para a alma roxa." },
+  pancada: { nome: "Pancada de gravidade", desc: "Arremessa a alma contra uma parede (vira alma azul naquela direção) e ossos sobem dali. Pule para escapar." },
 };
 
 export const SOUL_INFO: Record<SoulMode, { nome: string; cor: string; desc: string }> = {

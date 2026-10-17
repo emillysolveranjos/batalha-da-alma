@@ -42,7 +42,7 @@ Clique no ícone ♥ na barra de extensões.
 
 | Aba | O que dá para escolher |
 |---|---|
-| **Presets** | 42 lutas prontas (Undertale e Deltarune), só moveset, com várias fases cada. Busca, filtro por jogo, "Meus presets", abrir/baixar arquivo `.json` e Desfazer |
+| **Presets** | 43 lutas prontas (Undertale, Deltarune e o fangame Last Breath), só moveset, com várias fases cada. Busca, filtro por jogo, "Meus presets", abrir/baixar arquivo `.json` e Desfazer |
 | **Monstro** | Nome, aparência (URL ou **token selecionado** no mapa; GIFs animam), tamanho, fala no balão, texto da caixa, fundo, **HP / ATK / DEF**, descrição do "Conferir", **opções do AGIR**, se pode ser poupado |
 | **Alma** | Mecânica: **Vermelha** (livre), **Azul** (gravidade/pulo), **Verde** (parada + escudo), **Roxa** (3 fios). Cor, imagem própria, tamanho, velocidade. Regras: HP, tempo de invencibilidade, tamanho da caixa, **intensidade geral** (para as fases de chefe), dano do LUTAR, **itens dos jogadores**, menu final, sons, hitboxes |
 | **Ataques** | Lista de ataques do turno, em sequência, simultâneos ou sorteados. Cada ataque tem duração, dano, velocidade, quantidade, tamanho, **regra de cor** (branco, azul = não se mexa, laranja = mexa-se, verde = cura), **aparência do projétil** (círculo, quadrado, diamante, estrela, osso, seta, emoji ou imagem), fala própria e tamanho de caixa. **Turnos salvos** guardam conjuntos de ataques para carregar cada fase na hora |
@@ -52,11 +52,14 @@ Clique no ícone ♥ na barra de extensões.
 ### Ataques disponíveis
 
 Chuva · Rajada lateral · Ossos · Anel · Espiral · Mirado · Laser · Ricochete · Túnel · Explosão · Flechas ·
-Canhão de feixe · Arco · Estacas · Varredura (azul/laranja) · Fios
+Canhão de feixe · Arco · Estacas · Varredura (azul/laranja) · Fios · Pancada de gravidade
+
+A **pancada de gravidade** joga a alma contra uma das 4 paredes: ela vira alma azul com a gravidade
+naquela direção até o fim do turno, e uma fileira de ossos sobe daquela parede. Pule para longe dela (a seta oposta à parede, ou Z).
 
 ### Presets
 
-A aba **Presets** traz 42 lutas de **Undertale** e **Deltarune** recriadas só como *moveset*: padrões de ataque,
+A aba **Presets** traz 43 lutas de **Undertale**, **Deltarune** e do fangame **Last Breath** recriadas só como *moveset*: padrões de ataque,
 mecânica da alma (vermelha, azul, verde, roxa), tamanho da caixa e fases que vão ficando mais difíceis.
 Não há arte, som, código ou fala dos jogos; a aparência do monstro e as falas ficam por conta do mestre.
 São aproximações feitas com os ataques da extensão. As lutas marcadas como "(aproximado)" são as menos fiéis.
@@ -78,7 +81,19 @@ São aproximações feitas com os ataques da extensão. As lutas marcadas como "
    - **AGIR:** as opções que o mestre definiu. "Conferir" mostra ATK, DEF e a descrição. "Outra coisa…" deixa escrever.
    - **ITEM:** os itens definidos pelo mestre curam na hora e acabam. "Outra coisa…" deixa escrever.
    - **POUPAR:** Poupar (fica amarelo se o monstro pode ser poupado) ou Fugir.
-5. O mestre recebe cada ação como notificação, resolve na mesa e clica em **Próximo turno**.
+5. O mestre recebe cada ação como notificação, resolve na mesa e responde/avança pela **barra do mestre**.
+
+### Barra do mestre (dentro da tela da batalha)
+
+Aparece para o mestre quando ele assiste à batalha (👁 Assistir) e no **🧪 Testar sozinho**:
+
+- **Responder na caixa:** o texto aparece na caixa de diálogo dos jogadores (ex.: "O monstro aceitou o elogio!").
+  Também dá para responder pela aba Batalha do painel.
+- **▶ Próximo turno:** novo turno com os mesmos ataques.
+- **⏭ Próxima fase:** passa para a próxima fase salva (de um preset ou dos seus turnos) e já começa o turno.
+- **■ Encerrar:** termina a batalha para todos (no teste, fecha a janela).
+
+No teste sozinho, depois de escolher LUTAR/AGIR/ITEM/POUPAR, aperte **Z** (ou ▶) para seguir para o próximo turno.
 
 O HP e os itens usados de cada jogador ficam salvos entre os turnos. Se o HP chega a 0, a alma se parte e o jogador assiste até o mestre curar.
 
@@ -125,6 +140,7 @@ Com `npm run dev` rodando, abra no navegador:
 - `src/files.ts`: guarda os arquivos de áudio no navegador e os envia em pedaços aos jogadores
 - `src/media.ts`: reconhece links (YouTube, SoundCloud, Drive, Dropbox)
 - `src/presets.ts`: presets de moveset e formato do arquivo de preset
+- `src/gm.ts`: turnos salvos, fase atual e início de turno (painel e barra do mestre)
 - `src/background.ts`: abre e fecha a batalha nos jogadores e avisa o mestre
 - `src/shared.ts`: tipos, padrões e lista de ataques/almas
 - `vite.config.ts`: gera o `manifest.json` e a lista `audio/lista.json`

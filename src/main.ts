@@ -13,6 +13,7 @@ import {
   CH_EVENT,
   CH_HP,
   CH_ITEMS_RESET,
+  CH_REPLY,
   CONFIG_KEY,
   ActionMsg,
   describeAction,
@@ -31,6 +32,7 @@ import { MusicPlayer, Sfx } from "./audio";
 import { CH_FILE_PROGRESS, CH_FILE_PUSH, MAX_FILE_MB, ProgressMsg, fileUrl, hashFile, putFile } from "./files";
 import { describeSource, fileValue, parseSource } from "./media";
 import { BUILTIN_PRESETS, PRESET_FORMAT, PresetFile, parsePreset } from "./presets";
+import { applyTurn as applyTurnTo, getPhaseIdx, loadLibrary, newBattleState, saveLibrary, setPhaseIdx } from "./gm";
 
 const app = document.getElementById("app")!;
 const BATTLE_URL = `${import.meta.env.BASE_URL}battle.html`;
@@ -40,11 +42,11 @@ let cfg: BattleConfig = defaultConfig();
 let battle: BattleState | null = null;
 let players: Player[] = [];
 let tab: "monstro" | "alma" | "ataques" | "sons" | "presets" | "batalha" = "batalha";
-let presetFilter: "todos" | "Undertale" | "Deltarune" | "meus" = "todos";
+let presetFilter: "todos" | "Undertale" | "Deltarune" | "Fangame" | "meus" = "todos";
 let presetSearch = "";
 let undoCfg: BattleConfig | null = null;
 let presetStatus = "";
-let phaseIdx = -1;
+let phaseIdx = getPhaseIdx();
 let audioFiles: string[] = [];
 const urlMode = new Set<string>();
 let sendStatus = "";
@@ -338,6 +340,7 @@ function viewPresets() {
     ["todos", "Todos"],
     ["Undertale", "Undertale"],
     ["Deltarune", "Deltarune"],
+    ["Fangame", "Fã"],
     ["meus", `Meus (${mine.length})`],
   ];
   const cards = shown
@@ -423,6 +426,8 @@ function viewBatalha() {
       <button class="btn" data-act="reset-items">🎒 Repor itens</button>
     </div>
     <h2>Ações dos jogadores</h2>
+    <div class="row" style="margin-bottom:6px"><input type="text" id="replyText" placeholder="Responder na caixa dos jogadores (Enter)">
+      <button class="btn shrink" data-act="reply">Enviar</button></div>
     <div class="log">${log.length ? log.map((l) => `<div>${esc(l)}</div>`).join("") : '<span class="muted">As escolhas (LUTAR/AGIR/ITEM/POUPAR) aparecem aqui.</span>'}</div>
     <h2>Backup</h2>
     <div class="row"><button class="btn" data-act="export">Exportar JSON</button><button class="btn" data-act="import">Importar JSON</button></div>
@@ -431,6 +436,7 @@ function viewBatalha() {
 }
 
 function phaseSelect() {
+  phaseIdx = getPhaseIdx();
   const lib = loadLibrary();
   if (!lib.length) return "";
   return `<label>Fase do próximo turno</label>
@@ -525,6 +531,7 @@ app.addEventListener("change", (e) => {
   }
   if (el.dataset.phase !== undefined) {
     phaseIdx = Number((el as HTMLSelectElement).value);
+    setPhaseIdx(phaseIdx);
     const t = loadLibrary()[phaseIdx];
     if (t) {
       applyTurn(t);
@@ -629,6 +636,7 @@ app.addEventListener("click", async (e) => {
       if (t) {
         applyTurn(t);
         phaseIdx = i;
+        setPhaseIdx(phaseIdx);
         if (inOBR) OBR.notification.show(`Turno "${t.nome}" carregado.`, "SUCCESS");
       }
       break;
@@ -645,6 +653,7 @@ app.addEventListener("click", async (e) => {
       const lib = loadLibrary();
       if (!lib.length) return;
       phaseIdx = (phaseIdx + 1) % lib.length;
+      setPhaseIdx(phaseIdx);
       applyTurn(lib[phaseIdx]);
       break;
     }
@@ -697,6 +706,8 @@ app.addEventListener("click", async (e) => {
       return;
     case "heal-all":
       return setHp([], "max");
+    case "reply":
+      return sendReply();
     case "reset-items":
       if (inOBR) {
         OBR.broadcast.sendMessage(CH_ITEMS_RESET, {}, { destination: "REMOTE" });
@@ -832,15 +843,7 @@ async function startTurn() {
     render();
     return;
   }
-  const st: BattleState = {
-    ativo: true,
-    turno: `${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
-    seed: Math.floor(Math.random() * 1e9),
-    participantes: [...selected],
-    config: structuredClone(cfg),
-    numero: battle?.ativo ? (battle.numero ?? 1) + 1 : 1,
-    monstroHp: battle?.ativo ? Math.min(battle.monstroHp ?? cfg.monstro.hp, cfg.monstro.hp) : cfg.monstro.hp,
-  };
+  const st: BattleState = newBattleState(cfg, battle, [...selected]);
   if (!inOBR) return;
   await OBR.room.setMetadata({ [CONFIG_KEY]: cfg, [BATTLE_KEY]: st });
   openModal(BATTLE_URL);
@@ -854,6 +857,18 @@ function openModal(url: string) {
   OBR.modal.open({ id: MODAL_ID, url, fullScreen: true, hidePaper: true });
 }
 
+function sendReply() {
+  const el = document.getElementById("replyText") as HTMLInputElement | null;
+  const texto = el?.value.trim();
+  if (!texto) return;
+  if (inOBR) OBR.broadcast.sendMessage(CH_REPLY, { texto }, { destination: "ALL" });
+  pushLog(`Mestre: ${texto}`);
+  if (el) el.value = "";
+}
+app.addEventListener("keydown", (e) => {
+  if ((e.target as HTMLElement).id === "replyText" && e.key === "Enter") sendReply();
+});
+
 function setHp(alvo: string[], hp: number | "max") {
   if (!inOBR) return;
   OBR.broadcast.sendMessage(CH_HP, { alvo, hp, hpMax: cfg.mecanica.hpMax }, { destination: "REMOTE" });
@@ -861,11 +876,7 @@ function setHp(alvo: string[], hp: number | "max") {
 
 // ---------- presets ----------
 function applyTurn(t: SavedTurn) {
-  cfg.ataques = structuredClone(t.ataques);
-  cfg.monstro.fala = t.fala;
-  cfg.mecanica.ordem = t.ordem;
-  if (t.modo) cfg.alma.modo = t.modo;
-  if (t.intensidade) cfg.mecanica.intensidade = t.intensidade;
+  applyTurnTo(cfg, t);
 }
 
 /** Carrega um preset. Os prontos mantêm sons, itens e regras dos jogadores do mestre. */
@@ -893,6 +904,7 @@ function loadPreset(p: PresetFile, full: boolean) {
   const lib = loadLibrary().filter((t) => !t.nome.startsWith(prefix));
   saveLibrary([...p.turnos.map((t) => ({ ...structuredClone(t), nome: prefix + t.nome })), ...lib]);
   phaseIdx = p.turnos.length ? 0 : -1;
+  setPhaseIdx(phaseIdx);
   presetStatus = `"${p.nome}" carregado${p.turnos.length ? ` com ${p.turnos.length} fase(s) — escolha a fase na aba Batalha` : ""}.`;
   openCards = new Set([0]);
 }
@@ -972,21 +984,6 @@ function openPresetFile() {
     render();
   };
   input.click();
-}
-
-function loadLibrary(): SavedTurn[] {
-  try {
-    return JSON.parse(localStorage.getItem("batalha-turnos") || "[]");
-  } catch {
-    return [];
-  }
-}
-function saveLibrary(lib: SavedTurn[]) {
-  try {
-    localStorage.setItem("batalha-turnos", JSON.stringify(lib));
-  } catch {
-    /* sem armazenamento */
-  }
 }
 
 function pushLog(line: string) {

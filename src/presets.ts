@@ -43,7 +43,7 @@ const cor = (c: string, o: Opts = {}): Opts => ({ cor: c, ...o });
 
 interface Def {
   nome: string;
-  jogo: "Undertale" | "Deltarune";
+  jogo: "Undertale" | "Deltarune" | "Fangame";
   descricao: string;
   hp: number;
   atk: number;
@@ -296,7 +296,7 @@ const UNDERTALE: Def[] = [
     turnos: [
       t("Abertura", [a("ossos", 5, { velocidade: 1.4, densidade: 1.4 }), a("canhao", 5, { densidade: 1.2 })]),
       t("Azul e laranja", [a("varredura", 7, { ...azul, densidade: 0.8 }), a("varredura", 7, { ...laranja, densidade: 0.6 }), a("ossos", 7, { densidade: 0.6 })], juntos),
-      t("Gravidade", [a("ossos", 8, { densidade: 1.6, velocidade: 1.3 }), a("varredura", 8, { ...azul, densidade: 0.6 })], { ...juntos, modo: "azul" }),
+      t("Gravidade", [a("pancada", 8), a("ossos", 8, { densidade: 1.2, velocidade: 1.3 })], { ...juntos, modo: "azul" }),
       t("Feixes", [a("canhao", 8, { densidade: 2 })]),
       t("Túnel de ossos", [a("tunel", 8, { velocidade: 1.3 })]),
       t("Ataque final", [a("canhao", 12, { densidade: 1.6 }), a("ossos", 12, { densidade: 1.3 }), a("varredura", 12, { ...azul, densidade: 0.5 })], { ...juntos, intensidade: 1.4 }),
@@ -445,7 +445,27 @@ const DELTARUNE: Def[] = [
   },
 ];
 
-export const BUILTIN_PRESETS: PresetFile[] = [...UNDERTALE, ...DELTARUNE].map(build);
+// ---------- fangames ----------
+const FANGAMES: Def[] = [
+  {
+    nome: "Last Breath", jogo: "Fangame",
+    descricao: "Luta de fã em 3 fases, cada vez mais brutal: ossos, feixes, pancadas de gravidade e um final sem descanso. (aproximado)",
+    hp: 1, atk: 1, def: 1, modo: "vermelha", caixa: [240, 160],
+    turnos: [
+      t("Fase 1 — Aquecimento", [a("ossos", 6, { velocidade: 1.4, densidade: 1.3 }), a("canhao", 6, { densidade: 1.2 })], juntos),
+      t("Fase 1 — Pancadas", [a("pancada", 8), a("ossos", 8, { densidade: 0.9 })], juntos),
+      t("Fase 1 — Azul e laranja", [a("varredura", 8, { densidade: 1.1 }), a("canhao", 8, { densidade: 0.8 })], juntos),
+      t("Fase 2 — Sem brincadeira", [a("canhao", 9, { densidade: 2.2 }), a("estacas", 9, { densidade: 1.2 })], { ...juntos, intensidade: 1.25 }),
+      t("Fase 2 — Gravidade cruel", [a("pancada", 10, { densidade: 1.5 }), a("canhao", 10, { densidade: 0.9 })], { ...juntos, intensidade: 1.25 }),
+      t("Fase 2 — Corredor", [a("tunel", 9, { velocidade: 1.4 }), a("mirado", 9, { forma: "osso", densidade: 0.8 })], { ...juntos, intensidade: 1.25 }),
+      t("Fase 3 — Último suspiro", [a("espiral", 10, { forma: "osso", densidade: 1.3, velocidade: 1.2 }), a("canhao", 10, { densidade: 1.6 })], { ...juntos, intensidade: 1.45 }),
+      t("Fase 3 — Sem saída", [a("pancada", 12, { densidade: 1.6 }), a("varredura", 12, { densidade: 0.9 }), a("canhao", 12, { densidade: 1.2 })], { ...juntos, intensidade: 1.5 }),
+      t("Fase 3 — Final", [a("canhao", 16, { densidade: 2 }), a("ossos", 16, { densidade: 1.3 }), a("pancada", 16), a("estacas", 16)], { ...juntos, intensidade: 1.65 }),
+    ],
+  },
+];
+
+export const BUILTIN_PRESETS: PresetFile[] = [...UNDERTALE, ...DELTARUNE, ...FANGAMES].map(build);
 
 /** Aceita um preset exportado ou só uma configuração (backup antigo). */
 export function parsePreset(raw: unknown): PresetFile | null {

@@ -8,6 +8,7 @@ import {
   BulletShape,
   KIND_COLOR,
   SOUL_INFO,
+  SoulMode,
   mulberry32,
 } from "./shared";
 import { Sfx, unlockAudio } from "./audio";
@@ -122,6 +123,7 @@ export interface EngineOptions {
   onChoice?: (choice: ChoiceResult) => void;
   onFight?: (dano: number, critico: boolean, errou: boolean) => void; // animação no monstro
   menu?: MenuData;
+  waitText?: string; // linha mostrada depois da escolha (padrão: aguardando o mestre)
   onSoul?: (x: number, y: number, dead: boolean) => void;
   onSpeech?: (text: string) => void;
   onConfirmIdle?: () => void; // confirmar enquanto espera o mestre (ex.: enviar a nota com o controle)
@@ -394,7 +396,22 @@ const PATTERNS: Record<string, Pattern> & Partial<Record<AttackType, Pattern>> =
 };
 
 let intensity = 1;
-const EXTRA: Record<"canhao" | "arco" | "estacas" | "varredura" | "fios", Pattern> = {
+const EXTRA: Record<"canhao" | "arco" | "estacas" | "varredura" | "fios" | "pancada", Pattern> = {
+  pancada(a, dt, g) {
+    const { S, D, Z } = params(a);
+    every(a, "s", 2.4 / D, dt, () => {
+      const dir = Math.floor(a.rng() * 4);
+      g.slam(dir);
+      const b = g.box;
+      const th = 22 * Z;
+      const warn = 0.6 / Math.sqrt(S);
+      if (dir === 0) g.spawnBeam(a, b.cx, b.b - th / 2, b.w + 8, th, warn, 0);
+      if (dir === 2) g.spawnBeam(a, b.cx, b.t + th / 2, b.w + 8, th, warn, 0);
+      if (dir === 1) g.spawnBeam(a, b.l + th / 2, b.cy, th, b.h + 8, warn, 0);
+      if (dir === 3) g.spawnBeam(a, b.r - th / 2, b.cy, th, b.h + 8, warn, 0);
+    });
+  },
+
   canhao(a, dt, g) {
     const { S, D, Z } = params(a);
     const b = g.box;
@@ -571,8 +588,20 @@ export class BattleEngine {
     this.bindInput();
   }
 
-  get mode() {
-    return this.cfg.alma.modo;
+  modeOverride: SoulMode | null = null; // a pancada transforma a alma em azul até o fim do turno
+  gravDir = 0; // 0 baixo, 1 esquerda, 2 cima, 3 direita
+
+  get mode(): SoulMode {
+    return this.modeOverride ?? this.cfg.alma.modo;
+  }
+
+  /** Pancada: gravidade para a direção dada e a alma é arremessada contra a parede. */
+  slam(dir: number) {
+    if (!this.alive) return;
+    this.modeOverride = "azul";
+    this.gravDir = dir;
+    this.soul.vy = 700;
+    this.sfx.play("selecionar");
   }
   get soulScale() {
     return Math.max(0.5, this.cfg.alma.tamanho);
@@ -817,14 +846,31 @@ export class BattleEngine {
     } else this.startAttack();
   }
 
+  pendingReply = "";
+
+  /** Resposta do mestre na caixa de texto (se chegar no meio do ataque, aparece no fim). */
+  showReply(t: string) {
+    const clean = t.trim();
+    if (!clean) return;
+    const txt = clean.startsWith("*") ? clean : `* ${clean}`;
+    if (["intro", "fala", "ataque", "lutar", "lutarRes"].includes(this.phase)) {
+      this.pendingReply = txt;
+      return;
+    }
+    if (this.phase === "sub") this.setPhase("menu");
+    this.setText(txt);
+  }
+
   endTurn() {
     if (this.hp <= 0 && !this.opt.spectator) return;
+    const reply = this.pendingReply;
+    this.pendingReply = "";
     if (this.cfg.mecanica.menuFinal && !this.opt.spectator) {
       this.setPhase("menu");
-      this.setText("* O que você vai fazer?");
+      this.setText(reply || "* O que você vai fazer?");
     } else {
       this.setPhase("fim");
-      this.setText(this.opt.spectator ? "* Turno encerrado. Escolha o próximo passo." : "* O turno acabou.");
+      this.setText(reply || (this.opt.spectator ? "* Turno encerrado. Escolha o próximo passo." : "* O turno acabou."));
     }
   }
 
@@ -916,9 +962,12 @@ export class BattleEngine {
       }
     }
     const slow = k.has("ShiftLeft") || k.has("ShiftRight") || k.has("KeyX");
-    const jump = k.has("ArrowUp") || k.has("KeyW") || k.has("KeyZ") || k.has("Space") ||
-      (!!this.pointer && this.pointer.y < this.soul.y - 20);
-    return { x, y, slow, jump };
+    const up = k.has("ArrowUp") || k.has("KeyW");
+    const down = k.has("ArrowDown") || k.has("KeyS");
+    const left = k.has("ArrowLeft") || k.has("KeyA");
+    const right = k.has("ArrowRight") || k.has("KeyD");
+    const action = k.has("KeyZ") || k.has("Space");
+    return { x, y, slow, up, down, left, right, action };
   }
 
   updateSoul(dt: number) {
@@ -938,14 +987,37 @@ export class BattleEngine {
       s.x += inp.x * m * f * dt;
       s.y += inp.y * m * f * dt;
     } else if (this.mode === "azul") {
-      s.x += clamp(inp.x, -1, 1) * sp * (inp.slow ? 0.5 : 1) * dt;
-      const ground = s.y >= b.b - half - 0.5;
-      if (ground && inp.jump) s.vy = -270;
-      if (!inp.jump && s.vy < -70) s.vy = -70;
+      // gravidade em qualquer das 4 direções; s.vy = velocidade no sentido da gravidade
+      const gd = this.gravDir;
+      const vertical = gd === 0 || gd === 2;
+      const sign = gd === 0 || gd === 3 ? 1 : -1;
+      const gx = vertical ? 0 : sign;
+      const gy = vertical ? sign : 0;
+      const pointerAway =
+        !!this.pointer && ((this.pointer.x - s.x) * -gx + (this.pointer.y - s.y) * -gy) > 20;
+      const away = [inp.up, inp.right, inp.down, inp.left][gd] || inp.action || pointerAway;
+      const f = sp * (inp.slow ? 0.5 : 1);
+      if (vertical) s.x += clamp(inp.x, -1, 1) * f * dt;
+      else s.y += clamp(inp.y, -1, 1) * f * dt;
+      const groundP = vertical ? (sign > 0 ? b.b - half : b.t + half) : sign > 0 ? b.r - half : b.l + half;
+      const ceilP = vertical ? (sign > 0 ? b.t + half : b.b - half) : sign > 0 ? b.l + half : b.r - half;
+      let p = vertical ? s.y : s.x;
+      const ground = (p - groundP) * sign >= -0.5;
+      if (ground && away) s.vy = -270;
+      if (!away && s.vy < -70) s.vy = -70;
       s.vy += 720 * dt;
-      s.y += s.vy * dt;
-      if (s.y >= b.b - half) { s.y = b.b - half; s.vy = 0; }
-      if (s.y <= b.t + half) { s.y = b.t + half; s.vy = Math.max(0, s.vy); }
+      p += s.vy * sign * dt;
+      if ((p - groundP) * sign >= 0) {
+        if (s.vy > 450) this.shake = 0.15; // impacto da pancada
+        p = groundP;
+        s.vy = 0;
+      }
+      if ((p - ceilP) * sign <= 0) {
+        p = ceilP;
+        s.vy = Math.max(0, s.vy);
+      }
+      if (vertical) s.y = p;
+      else s.x = p;
     } else if (this.mode === "verde") {
       s.x = b.cx;
       s.y = b.cy;
@@ -1194,7 +1266,7 @@ export class BattleEngine {
     const s = this.soul;
     unlockAudio();
     this.opt.onGesture?.();
-    if (this.phase === "escolhido" && (code === "KeyZ" || code === "Enter")) this.opt.onConfirmIdle?.();
+    if (["escolhido", "fim", "morto"].includes(this.phase) && (code === "KeyZ" || code === "Enter")) this.opt.onConfirmIdle?.();
     const confirm = code === "KeyZ" || code === "Enter" || code === "Space";
     const back = code === "KeyX" || code === "Escape" || code === "Backspace";
     if ((this.phase === "ataque" || this.phase === "fala") && this.alive) {
@@ -1317,7 +1389,7 @@ export class BattleEngine {
   finish(c: ChoiceResult, msg: string) {
     this.sfx.play("selecionar");
     this.setPhase("escolhido");
-    this.setText(c.escrever ? msg : `${msg}\n* Aguardando o mestre...`);
+    this.setText(c.escrever ? msg : `${msg}\n${this.opt.waitText ?? "* Aguardando o mestre..."}`);
     this.opt.onChoice?.(c);
   }
 
