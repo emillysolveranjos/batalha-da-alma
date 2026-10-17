@@ -73,6 +73,7 @@ interface Bullet {
   warn: number; // > 0: só aviso, sem dano (lasers)
   fadeAt: number; // para lasers: some depois de ficar ativo por esse tempo
   bounce: boolean;
+  ay?: number; // gravidade própria (projéteis em arco)
   burstY?: number;
   beam?: boolean;
   dead?: boolean;
@@ -181,7 +182,7 @@ function every(a: Running, key: string, interval: number, dt: number, fn: () => 
   }
 }
 
-const PATTERNS: Record<AttackType, Pattern> = {
+const PATTERNS: Record<string, Pattern> & Partial<Record<AttackType, Pattern>> = {
   chuva(a, dt, g) {
     const { S, D, Z } = params(a);
     const b = g.box;
@@ -393,6 +394,81 @@ const PATTERNS: Record<AttackType, Pattern> = {
 };
 
 let intensity = 1;
+const EXTRA: Record<"canhao" | "arco" | "estacas" | "varredura" | "fios", Pattern> = {
+  canhao(a, dt, g) {
+    const { S, D, Z } = params(a);
+    const b = g.box;
+    every(a, "s", 1.6 / D, dt, () => {
+      const o = perimeterPoint(b, a.rng(), 70);
+      const tx = g.soul.x + (a.rng() - 0.5) * 30;
+      const ty = g.soul.y + (a.rng() - 0.5) * 30;
+      const ang = Math.atan2(ty - o.y, tx - o.x);
+      const len = 900;
+      g.spawnBeam(a, o.x + Math.cos(ang) * (len / 2), o.y + Math.sin(ang) * (len / 2), len, 26 * Z, 0.75 / Math.sqrt(S), ang);
+    });
+  },
+
+  arco(a, dt, g) {
+    const { S, D, Z } = params(a);
+    const b = g.box;
+    every(a, "s", 0.45 / D, dt, () => {
+      const left = a.rng() < 0.5;
+      g.spawn(a, {
+        x: left ? b.l - 10 : b.r + 10,
+        y: b.b - 10 - a.rng() * b.h * 0.3,
+        vx: (left ? 1 : -1) * (60 + a.rng() * 90) * S,
+        vy: -(190 + a.rng() * 110) * S,
+        ay: 330 * S * S,
+        r: 6 * Z,
+        maxLife: 8,
+      });
+    });
+  },
+
+  estacas(a, dt, g) {
+    const { S, D, Z } = params(a);
+    const b = g.box;
+    every(a, "s", 0.85 / D, dt, () => {
+      const x = a.rng() < 0.6 ? g.soul.x : b.l + a.rng() * b.w;
+      const h = b.h * (0.45 + a.rng() * 0.25);
+      const top = a.rng() < 0.25;
+      g.spawnBeam(a, x, top ? b.t + h / 2 : b.b - h / 2, 16 * Z, h, 0.6 / Math.sqrt(S), 0);
+    });
+  },
+
+  varredura(a, dt, g) {
+    const { S, D, Z } = params(a);
+    const b = g.box;
+    every(a, "s", 1.3 / D, dt, () => {
+      const left = a.rng() < 0.5;
+      const n = (a.data.n = (a.data.n ?? 0) + 1);
+      const kind = a.cfg.tipoDano === "branco" ? (n % 2 ? "azul" : "laranja") : a.cfg.tipoDano;
+      g.spawn(a, {
+        x: left ? b.l - 10 : b.r + 10,
+        y: b.cy,
+        vx: (left ? 1 : -1) * 150 * S,
+        vy: 0,
+        r: b.h / 2,
+        rw: 12 * Z,
+        rh: b.h + 20,
+        ang: 0,
+        kind,
+      });
+    });
+  },
+
+  fios(a, dt, g) {
+    const { S, D, Z } = params(a);
+    const b = g.box;
+    every(a, "s", 0.5 / D, dt, () => {
+      const i = Math.floor(a.rng() * 3);
+      const left = a.rng() < 0.5;
+      g.spawn(a, { x: left ? b.l - 10 : b.r + 10, y: g.lineY(i), vx: (left ? 1 : -1) * 120 * S, vy: 0, r: 7 * Z });
+    });
+  },
+};
+Object.assign(PATTERNS, EXTRA);
+
 function params(a: Running) {
   return {
     S: Math.max(0.1, a.cfg.velocidade * intensity),
@@ -924,13 +1000,13 @@ export class BattleEngine {
     });
   }
 
-  spawnBeam(a: Running, x: number, y: number, w: number, h: number, warn: number) {
+  spawnBeam(a: Running, x: number, y: number, w: number, h: number, warn: number, ang = 0) {
     this.spawn(a, {
       x, y, vx: 0, vy: 0,
       r: Math.max(w, h) / 2,
       rw: w,
       rh: h,
-      ang: 0,
+      ang,
       spin: 0,
       warn,
       fadeAt: warn + 0.45,
@@ -947,6 +1023,7 @@ export class BattleEngine {
     for (const u of this.bullets) {
       u.life += dt;
       u.warn -= dt;
+      if (u.ay) u.vy += u.ay * dt;
       u.x += u.vx * dt;
       u.y += u.vy * dt;
       u.ang += u.spin * dt;
@@ -1428,6 +1505,7 @@ export class BattleEngine {
     g.translate(u.x, u.y);
 
     if (u.beam) {
+      g.rotate(u.ang);
       if (u.warn > 0) {
         if (Math.floor(u.life * 12) % 2 === 0) {
           g.strokeStyle = col;

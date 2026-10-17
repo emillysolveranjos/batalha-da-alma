@@ -30,6 +30,7 @@ import {
 import { MusicPlayer, Sfx } from "./audio";
 import { CH_FILE_PROGRESS, CH_FILE_PUSH, MAX_FILE_MB, ProgressMsg, fileUrl, hashFile, putFile } from "./files";
 import { describeSource, fileValue, parseSource } from "./media";
+import { BUILTIN_PRESETS, PRESET_FORMAT, PresetFile, parsePreset } from "./presets";
 
 const app = document.getElementById("app")!;
 const BATTLE_URL = `${import.meta.env.BASE_URL}battle.html`;
@@ -38,7 +39,12 @@ const inOBR = OBR.isAvailable;
 let cfg: BattleConfig = defaultConfig();
 let battle: BattleState | null = null;
 let players: Player[] = [];
-let tab: "monstro" | "alma" | "ataques" | "sons" | "batalha" = "batalha";
+let tab: "monstro" | "alma" | "ataques" | "sons" | "presets" | "batalha" = "batalha";
+let presetFilter: "todos" | "Undertale" | "Deltarune" | "meus" = "todos";
+let presetSearch = "";
+let undoCfg: BattleConfig | null = null;
+let presetStatus = "";
+let phaseIdx = -1;
 let audioFiles: string[] = [];
 const urlMode = new Set<string>();
 let sendStatus = "";
@@ -318,6 +324,58 @@ function viewSons() {
     <p class="muted">Use apenas áudios que você tem direito de usar.</p>`;
 }
 
+function viewPresets() {
+  const mine = loadMyPresets();
+  const list: { p: PresetFile; src: "builtin" | "meu"; i: number }[] =
+    presetFilter === "meus"
+      ? mine.map((p, i) => ({ p, src: "meu", i }))
+      : BUILTIN_PRESETS.map((p, i) => ({ p, src: "builtin" as const, i })).filter(
+          (x) => presetFilter === "todos" || x.p.jogo === presetFilter,
+        );
+  const q = presetSearch.trim().toLowerCase();
+  const shown = q ? list.filter((x) => `${x.p.nome} ${x.p.descricao}`.toLowerCase().includes(q)) : list;
+  const filters = [
+    ["todos", "Todos"],
+    ["Undertale", "Undertale"],
+    ["Deltarune", "Deltarune"],
+    ["meus", `Meus (${mine.length})`],
+  ];
+  const cards = shown
+    .map(({ p, src, i }) => {
+      const soul = SOUL_INFO[p.config.alma.modo];
+      const modos = [...new Set(p.turnos.map((t) => t.modo).filter(Boolean))] as SoulMode[];
+      return `<div class="card">
+        <div class="card-head"><b style="flex:1;font:22px VT323,monospace">${esc(p.nome)}</b>
+          ${src === "meu" ? `<button class="btn small" data-act="export-preset" data-i="${i}" title="Baixar arquivo">💾</button>
+          <button class="btn small" data-act="del-preset" data-i="${i}" title="Apagar">✕</button>` : ""}
+          <button class="btn small go" data-act="load-preset" data-src="${src}" data-i="${i}">Carregar</button></div>
+        <div class="muted">${esc(p.descricao)}</div>
+        <div class="muted">${p.jogo ? `${esc(p.jogo)} • ` : ""}<span style="color:${soul.cor}">♥</span> ${
+          modos.length > 1 ? modos.map((m) => SOUL_INFO[m].nome.split(" ")[0]).join(" / ") : soul.nome.split(" ")[0]
+        } • ${Math.max(1, p.turnos.length)} fase(s) • HP ${p.config.monstro.hp}</div>
+      </div>`;
+    })
+    .join("");
+  return `
+    ${presetStatus ? `<div class="status on">${esc(presetStatus)} ${undoCfg ? '<button class="btn small" data-act="undo-preset">Desfazer</button>' : ""}</div>` : ""}
+    <p class="muted">Presets de <b>moveset</b>: os ataques, a mecânica da alma e as fases de cada luta, recriados de forma aproximada
+    com os ataques da extensão. A aparência do monstro fica por sua conta (aba Monstro). Sua música, itens e HP dos jogadores são mantidos.</p>
+    <div class="tabs" style="margin-top:6px">${filters
+      .map(([k, l]) => `<button data-filter="${k}" class="${presetFilter === k ? "on" : ""}">${l}</button>`)
+      .join("")}</div>
+    <input type="text" data-search placeholder="Buscar luta…" value="${esc(presetSearch)}">
+    ${cards || '<p class="muted">Nenhum preset aqui ainda.</p>'}
+    <h2>Seus presets</h2>
+    <div class="row"><input type="text" id="presetName" placeholder="Nome (ex.: Chefe da campanha)">
+      <button class="btn shrink" data-act="save-preset">Salvar atual</button></div>
+    <p class="muted">Salva monstro, alma, ataques, sons e todos os turnos salvos (aba Ataques) como as fases do preset.</p>
+    <div class="row">
+      <button class="btn" data-act="open-preset">📂 Abrir arquivo</button>
+      <button class="btn" data-act="export-current">💾 Baixar atual</button>
+    </div>
+    <textarea id="presetJson" class="hidden" style="margin-top:6px;min-height:100px" readonly></textarea>`;
+}
+
 function viewBatalha() {
   const active = !!battle?.ativo;
   const pl = players.filter((p) => p.role !== "GM");
@@ -349,6 +407,7 @@ function viewBatalha() {
             <button class="btn small" data-act="mhp" data-d="max">♥</button></div>`
         : ""
     }
+    ${phaseSelect()}
     <button class="btn big go" data-act="start">▶ ${active ? "Próximo turno" : "Iniciar batalha"}</button>
     <div class="row">
       <button class="btn" data-act="watch" ${active ? "" : "disabled"}>👁 Assistir</button>
@@ -371,6 +430,16 @@ function viewBatalha() {
     <button class="btn hidden" id="jsonApply" data-act="apply-json">Aplicar JSON</button>`;
 }
 
+function phaseSelect() {
+  const lib = loadLibrary();
+  if (!lib.length) return "";
+  return `<label>Fase do próximo turno</label>
+    <div class="row"><select data-phase>
+      <option value="-1" ${phaseIdx < 0 ? "selected" : ""}>Como está nas abas agora</option>
+      ${lib.map((t, i) => `<option value="${i}" ${i === phaseIdx ? "selected" : ""}>${esc(t.nome)}</option>`).join("")}
+    </select><button class="btn shrink" data-act="next-phase" title="Próxima fase da lista">⏭</button></div>`;
+}
+
 function render() {
   const tabs = [
     ["batalha", "Batalha"],
@@ -379,11 +448,13 @@ function render() {
     ["ataques", "Ataques"],
     ["sons", "Sons"],
   ];
+  tabs.splice(1, 0, ["presets", "Presets"]);
   const body =
     tab === "monstro" ? viewMonstro()
     : tab === "alma" ? viewAlma()
     : tab === "ataques" ? viewAtaques()
     : tab === "sons" ? viewSons()
+    : tab === "presets" ? viewPresets()
     : viewBatalha();
   const scroll = window.scrollY;
   app.innerHTML = `
@@ -396,6 +467,15 @@ function render() {
 // ---------- eventos ----------
 app.addEventListener("input", (e) => {
   const el = e.target as HTMLInputElement;
+  if (el.dataset.search !== undefined) {
+    presetSearch = el.value;
+    const pos = el.selectionStart;
+    render();
+    const again = app.querySelector<HTMLInputElement>("[data-search]");
+    again?.focus();
+    if (again && pos !== null) again.setSelectionRange(pos, pos);
+    return;
+  }
   if (el.dataset.lines) {
     setPath(el.dataset.lines, el.value.split("\n").map((l) => l.trim()).filter(Boolean));
     save();
@@ -443,6 +523,16 @@ app.addEventListener("change", (e) => {
     save();
     render();
   }
+  if (el.dataset.phase !== undefined) {
+    phaseIdx = Number((el as HTMLSelectElement).value);
+    const t = loadLibrary()[phaseIdx];
+    if (t) {
+      applyTurn(t);
+      save();
+    }
+    render();
+    return;
+  }
   if (el.dataset.sel) {
     const id = el.dataset.sel;
     (el as HTMLInputElement).checked ? selected.add(id) : selected.delete(id);
@@ -451,7 +541,7 @@ app.addEventListener("change", (e) => {
 
 app.addEventListener("click", async (e) => {
   const el = (e.target as HTMLElement).closest<HTMLElement>(
-    "[data-tab],[data-act],[data-mode],[data-token],[data-hp],[data-preview],[data-upload]",
+    "[data-tab],[data-act],[data-mode],[data-token],[data-hp],[data-preview],[data-upload],[data-filter]",
   );
   if (!el) return;
   if (el.dataset.preview) {
@@ -460,6 +550,11 @@ app.addEventListener("click", async (e) => {
   }
   if (el.dataset.upload) {
     pickFile(el.dataset.upload);
+    return;
+  }
+  if (el.dataset.filter) {
+    presetFilter = el.dataset.filter as typeof presetFilter;
+    render();
     return;
   }
   if (el.dataset.tab) {
@@ -518,16 +613,22 @@ app.addEventListener("click", async (e) => {
     case "save-turn": {
       const name = (document.getElementById("turnName") as HTMLInputElement).value.trim() || `Turno ${loadLibrary().length + 1}`;
       const lib = loadLibrary();
-      lib.push({ nome: name, fala: cfg.monstro.fala, ordem: cfg.mecanica.ordem, ataques: structuredClone(cfg.ataques) });
+      lib.push({
+        nome: name,
+        fala: cfg.monstro.fala,
+        ordem: cfg.mecanica.ordem,
+        ataques: structuredClone(cfg.ataques),
+        modo: cfg.alma.modo,
+        intensidade: cfg.mecanica.intensidade,
+      });
       saveLibrary(lib);
       break;
     }
     case "load-turn": {
       const t = loadLibrary()[i];
       if (t) {
-        cfg.ataques = structuredClone(t.ataques);
-        cfg.monstro.fala = t.fala;
-        cfg.mecanica.ordem = t.ordem;
+        applyTurn(t);
+        phaseIdx = i;
         if (inOBR) OBR.notification.show(`Turno "${t.nome}" carregado.`, "SUCCESS");
       }
       break;
@@ -540,6 +641,52 @@ app.addEventListener("click", async (e) => {
     }
     case "start":
       return startTurn();
+    case "next-phase": {
+      const lib = loadLibrary();
+      if (!lib.length) return;
+      phaseIdx = (phaseIdx + 1) % lib.length;
+      applyTurn(lib[phaseIdx]);
+      break;
+    }
+    case "load-preset": {
+      const p = el.dataset.src === "meu" ? loadMyPresets()[i] : BUILTIN_PRESETS[i];
+      if (p) loadPreset(p, el.dataset.src === "meu");
+      break;
+    }
+    case "undo-preset":
+      if (undoCfg) {
+        cfg = undoCfg;
+        undoCfg = null;
+        presetStatus = "Preset desfeito.";
+      }
+      break;
+    case "save-preset": {
+      const nome = (document.getElementById("presetName") as HTMLInputElement).value.trim() || cfg.monstro.nome || "Meu preset";
+      const mine = loadMyPresets().filter((x) => x.nome !== nome);
+      mine.unshift(currentAsPreset(nome));
+      saveMyPresets(mine);
+      presetFilter = "meus";
+      presetStatus = `Preset "${nome}" salvo neste navegador.`;
+      undoCfg = null;
+      break;
+    }
+    case "del-preset": {
+      const mine = loadMyPresets();
+      mine.splice(i, 1);
+      saveMyPresets(mine);
+      break;
+    }
+    case "export-preset": {
+      const p = loadMyPresets()[i];
+      if (p) downloadPreset(p);
+      return;
+    }
+    case "export-current":
+      downloadPreset(currentAsPreset(cfg.monstro.nome || "preset"));
+      return;
+    case "open-preset":
+      openPresetFile();
+      return;
     case "watch":
       return openModal(BATTLE_URL);
     case "test":
@@ -710,6 +857,121 @@ function openModal(url: string) {
 function setHp(alvo: string[], hp: number | "max") {
   if (!inOBR) return;
   OBR.broadcast.sendMessage(CH_HP, { alvo, hp, hpMax: cfg.mecanica.hpMax }, { destination: "REMOTE" });
+}
+
+// ---------- presets ----------
+function applyTurn(t: SavedTurn) {
+  cfg.ataques = structuredClone(t.ataques);
+  cfg.monstro.fala = t.fala;
+  cfg.mecanica.ordem = t.ordem;
+  if (t.modo) cfg.alma.modo = t.modo;
+  if (t.intensidade) cfg.mecanica.intensidade = t.intensidade;
+}
+
+/** Carrega um preset. Os prontos mantêm sons, itens e regras dos jogadores do mestre. */
+function loadPreset(p: PresetFile, full: boolean) {
+  undoCfg = structuredClone(cfg);
+  const pc = normalizeConfig(structuredClone(p.config));
+  if (full) cfg = pc;
+  else {
+    cfg = {
+      ...cfg,
+      monstro: pc.monstro,
+      alma: { ...cfg.alma, modo: pc.alma.modo },
+      mecanica: {
+        ...cfg.mecanica,
+        caixaL: pc.mecanica.caixaL,
+        caixaA: pc.mecanica.caixaA,
+        ordem: pc.mecanica.ordem,
+        intensidade: pc.mecanica.intensidade,
+      },
+      ataques: pc.ataques,
+    };
+  }
+  // as fases do preset entram no topo da lista de turnos salvos
+  const prefix = `${p.nome} — `;
+  const lib = loadLibrary().filter((t) => !t.nome.startsWith(prefix));
+  saveLibrary([...p.turnos.map((t) => ({ ...structuredClone(t), nome: prefix + t.nome })), ...lib]);
+  phaseIdx = p.turnos.length ? 0 : -1;
+  presetStatus = `"${p.nome}" carregado${p.turnos.length ? ` com ${p.turnos.length} fase(s) — escolha a fase na aba Batalha` : ""}.`;
+  openCards = new Set([0]);
+}
+
+function currentAsPreset(nome: string): PresetFile {
+  return {
+    formato: PRESET_FORMAT,
+    versao: 1,
+    nome,
+    descricao: `${cfg.monstro.nome} • ${cfg.ataques.length} ataque(s)`,
+    config: structuredClone(cfg),
+    turnos: loadLibrary(),
+  };
+}
+
+function loadMyPresets(): PresetFile[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem("batalha-presets") || "[]");
+    return Array.isArray(raw) ? (raw.map(parsePreset).filter(Boolean) as PresetFile[]) : [];
+  } catch {
+    return [];
+  }
+}
+function saveMyPresets(list: PresetFile[]) {
+  try {
+    localStorage.setItem("batalha-presets", JSON.stringify(list));
+  } catch {
+    notify("Não deu para salvar: o armazenamento do navegador está cheio.", "ERROR");
+  }
+}
+
+function downloadPreset(p: PresetFile) {
+  const json = JSON.stringify(p, null, 1);
+  const ta = document.getElementById("presetJson") as HTMLTextAreaElement | null;
+  if (ta) {
+    ta.classList.remove("hidden");
+    ta.value = json;
+  }
+  try {
+    const url = URL.createObjectURL(new Blob([json], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${p.nome.replace(/[^\w\- ]+/g, "").trim() || "preset"}.batalha.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  } catch {
+    /* o texto fica na caixa abaixo para copiar */
+  }
+  notify("Preset gerado. Se o download não começar, copie o texto da caixa.", "INFO");
+}
+
+function openPresetFile() {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".json,application/json";
+  input.onchange = async () => {
+    const f = input.files?.[0];
+    if (!f) return;
+    let p: PresetFile | null = null;
+    try {
+      p = parsePreset(JSON.parse(await f.text()));
+    } catch {
+      p = null;
+    }
+    if (!p) {
+      notify("Esse arquivo não é um preset da Batalha da Alma.", "ERROR");
+      return;
+    }
+    const mine = loadMyPresets().filter((x) => x.nome !== p!.nome);
+    mine.unshift(p);
+    saveMyPresets(mine);
+    loadPreset(p, true);
+    presetFilter = "meus";
+    save();
+    render();
+  };
+  input.click();
 }
 
 function loadLibrary(): SavedTurn[] {

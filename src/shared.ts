@@ -62,7 +62,12 @@ export type AttackType =
   | "ricochete"
   | "tunel"
   | "explosao"
-  | "flechas";
+  | "flechas"
+  | "canhao"
+  | "arco"
+  | "estacas"
+  | "varredura"
+  | "fios";
 
 export interface AttackConfig {
   tipo: AttackType;
@@ -153,6 +158,8 @@ export interface SavedTurn {
   fala: string;
   ordem: BattleConfig["mecanica"]["ordem"];
   ataques: AttackConfig[];
+  modo?: SoulMode; // a fase pode trocar a mecânica da alma
+  intensidade?: number;
 }
 
 export interface BattleState {
@@ -177,6 +184,11 @@ export const ATTACK_INFO: Record<AttackType, { nome: string; desc: string }> = {
   tunel: { nome: "Túnel", desc: "Paredes descem com um corredor que serpenteia." },
   explosao: { nome: "Explosão", desc: "Bolas caem e explodem em estilhaços." },
   flechas: { nome: "Flechas", desc: "Vêm dos 4 lados até o centro. Ideal para a alma verde." },
+  canhao: { nome: "Canhão de feixe", desc: "Mira de fora da caixa, em qualquer ângulo, e dispara um feixe largo." },
+  arco: { nome: "Arco", desc: "Projéteis lançados dos lados caem em parábola." },
+  estacas: { nome: "Estacas", desc: "O chão (ou o teto) pisca e uma estaca sobe naquele ponto." },
+  varredura: { nome: "Varredura", desc: "Barras da altura da caixa atravessam tudo. Use azul ou laranja; branco alterna os dois." },
+  fios: { nome: "Fios", desc: "Projéteis correm pelas 3 linhas horizontais. Feito para a alma roxa." },
 };
 
 export const SOUL_INFO: Record<SoulMode, { nome: string; cor: string; desc: string }> = {
@@ -202,7 +214,12 @@ export function defaultAttack(tipo: AttackType = "chuva"): AttackConfig {
     tamanho: 1,
     dano: 2,
     tipoDano: "branco",
-    forma: tipo === "ossos" || tipo === "tunel" ? "osso" : tipo === "flechas" ? "seta" : "circulo",
+    forma:
+      tipo === "ossos" || tipo === "tunel" || tipo === "varredura"
+        ? "osso"
+        : tipo === "flechas" || tipo === "estacas"
+          ? "seta"
+          : "circulo",
     cor: "#ffffff",
     emoji: "⭐",
     imagem: "",

@@ -42,15 +42,30 @@ Clique no ícone ♥ na barra de extensões.
 
 | Aba | O que dá para escolher |
 |---|---|
+| **Presets** | 42 lutas prontas (Undertale e Deltarune), só moveset, com várias fases cada. Busca, filtro por jogo, "Meus presets", abrir/baixar arquivo `.json` e Desfazer |
 | **Monstro** | Nome, aparência (URL ou **token selecionado** no mapa; GIFs animam), tamanho, fala no balão, texto da caixa, fundo, **HP / ATK / DEF**, descrição do "Conferir", **opções do AGIR**, se pode ser poupado |
 | **Alma** | Mecânica: **Vermelha** (livre), **Azul** (gravidade/pulo), **Verde** (parada + escudo), **Roxa** (3 fios). Cor, imagem própria, tamanho, velocidade. Regras: HP, tempo de invencibilidade, tamanho da caixa, **intensidade geral** (para as fases de chefe), dano do LUTAR, **itens dos jogadores**, menu final, sons, hitboxes |
 | **Ataques** | Lista de ataques do turno, em sequência, simultâneos ou sorteados. Cada ataque tem duração, dano, velocidade, quantidade, tamanho, **regra de cor** (branco, azul = não se mexa, laranja = mexa-se, verde = cura), **aparência do projétil** (círculo, quadrado, diamante, estrela, osso, seta, emoji ou imagem), fala própria e tamanho de caixa. **Turnos salvos** guardam conjuntos de ataques para carregar cada fase na hora |
 | **Sons** | Música e cada efeito: padrão (original), **arquivo enviado do computador**, **YouTube**, **SoundCloud**, Google Drive, Dropbox ou link de mp3. Volumes e botão ▶ para ouvir |
-| **Batalha** | Iniciar / próximo turno, assistir, testar sozinho, encerrar, quem participa, **HP do monstro**, HP de cada jogador (−5, +5, curar), repor itens, registro das ações, backup em JSON |
+| **Batalha** | **Fase do próximo turno** (⏭ avança), iniciar / próximo turno, assistir, testar sozinho, encerrar, quem participa, **HP do monstro**, HP de cada jogador (−5, +5, curar), repor itens, registro das ações, backup em JSON |
 
 ### Ataques disponíveis
 
-Chuva · Rajada lateral · Ossos · Anel · Espiral · Mirado · Laser · Ricochete · Túnel · Explosão · Flechas
+Chuva · Rajada lateral · Ossos · Anel · Espiral · Mirado · Laser · Ricochete · Túnel · Explosão · Flechas ·
+Canhão de feixe · Arco · Estacas · Varredura (azul/laranja) · Fios
+
+### Presets
+
+A aba **Presets** traz 42 lutas de **Undertale** e **Deltarune** recriadas só como *moveset*: padrões de ataque,
+mecânica da alma (vermelha, azul, verde, roxa), tamanho da caixa e fases que vão ficando mais difíceis.
+Não há arte, som, código ou fala dos jogos; a aparência do monstro e as falas ficam por conta do mestre.
+São aproximações feitas com os ataques da extensão. As lutas marcadas como "(aproximado)" são as menos fiéis.
+
+- **Carregar:** troca monstro, alma, ataques e caixa. Música, itens e regras dos jogadores continuam os seus.
+  As fases entram na lista de turnos; escolha a fase na aba **Batalha** antes de cada turno (⏭ passa para a próxima).
+- **Desfazer:** volta para o que estava antes de carregar.
+- **Meus presets:** "Salvar atual" guarda a luta inteira (com os turnos salvos como fases) neste navegador.
+- **Arquivo:** "Baixar atual" gera um `.batalha.json`; "Abrir arquivo" carrega um preset de outra pessoa ou de outro computador.
 
 ### Fluxo de um turno
 
@@ -109,6 +124,7 @@ Com `npm run dev` rodando, abra no navegador:
 - `src/audio.ts`: efeitos, música original sintetizada, tocador de arquivos, YouTube e SoundCloud
 - `src/files.ts`: guarda os arquivos de áudio no navegador e os envia em pedaços aos jogadores
 - `src/media.ts`: reconhece links (YouTube, SoundCloud, Drive, Dropbox)
+- `src/presets.ts`: presets de moveset e formato do arquivo de preset
 - `src/background.ts`: abre e fecha a batalha nos jogadores e avisa o mestre
 - `src/shared.ts`: tipos, padrões e lista de ataques/almas
 - `vite.config.ts`: gera o `manifest.json` e a lista `audio/lista.json`
