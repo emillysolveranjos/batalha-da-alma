@@ -50,7 +50,13 @@ export type BulletShape =
   | "osso"
   | "seta"
   | "emoji"
-  | "imagem";
+  | "imagem"
+  | "espada"
+  | "triangulo"
+  | "estrela6"
+  | "crescente"
+  | "gota"
+  | "rabisco";
 
 export type AttackType =
   | "chuva"
@@ -80,7 +86,27 @@ export type AttackType =
   | "corte"
   | "deriva"
   | "lancas"
-  | "vortice";
+  | "vortice"
+  | "crescente"
+  | "estocada"
+  | "rabisco"
+  | "nevasca"
+  | "xazul"
+  | "espada"
+  | "pinos"
+  | "estrelaazul"
+  | "cone"
+  | "estilhacos"
+  | "bolhas"
+  | "muralha"
+  | "guilhotina"
+  | "teia"
+  | "mira"
+  | "orbita"
+  | "visaodupla"
+  | "arena"
+  | "galaxia"
+  | "constelacao";
 
 export interface AttackConfig {
   tipo: AttackType;
@@ -250,6 +276,26 @@ export const ATTACK_INFO: Record<AttackType, { nome: string; desc: string }> = {
   corte: { nome: "Cortes", desc: "Linha vermelha de aviso e um corte rápido atravessa a tela." },
   lancas: { nome: "Lanças traiçoeiras", desc: "Lanças dos 4 lados; as amarelas dão a volta e chegam pelo lado oposto. Feito para a alma verde." },
   vortice: { nome: "Vórtice", desc: "Puxa a alma para o centro enquanto projéteis giram em espiral para dentro." },
+  crescente: { nome: "Luas crescentes", desc: "Cortes em forma de lua atravessam a tela com um vão para passar." },
+  estocada: { nome: "Estocada", desc: "Uma linha fina mira a alma e um golpe horizontal enorme vem logo depois." },
+  rabisco: { nome: "Pilares rabiscados", desc: "Colunas em zigue-zague atravessam a caixa com uma abertura." },
+  nevasca: { nome: "Nevasca de diamantes", desc: "Diamantes caem como neve e espinhos de cristal sobem do chão." },
+  xazul: { nome: "X azul", desc: "Um X azul cruza a caixa (fique parado) e um corte branco vem em seguida." },
+  espada: { nome: "Espada caindo", desc: "Uma espada gigante mira a sua coluna e despenca." },
+  pinos: { nome: "Pinos de losango", desc: "Losangos se alinham numa borda e disparam para dentro." },
+  estrelaazul: { nome: "Estrela azul", desc: "Raios azuis saem do centro (fique parado), depois raios brancos entre eles." },
+  cone: { nome: "Cone de luz", desc: "Um cone enorme de luz mira a alma de fora da caixa." },
+  estilhacos: { nome: "Estilhaços", desc: "Explosões de triângulos voando para todos os lados." },
+  bolhas: { nome: "Bolhas que estouram", desc: "Bolhas aparecem no alto da caixa e estouram em gotas." },
+  muralha: { nome: "Muralha de espadas", desc: "Uma parede de espadas com um buraco atravessa a caixa, com dardos." },
+  guilhotina: { nome: "Guilhotina", desc: "Espadas se alinham no alto e caem todas de uma vez." },
+  teia: { nome: "Teia de cortes", desc: "Linhas vermelhas formam uma rede de losangos e viram cortes." },
+  mira: { nome: "Mira", desc: "Uma mira trava na alma e uma cruz de feixes acerta o ponto." },
+  orbita: { nome: "Espadas em órbita", desc: "Espadas giram em volta da alma e depois fecham para o centro." },
+  visaodupla: { nome: "Visão dupla", desc: "Tudo aparece em dobro (o fantasma não machuca). Combine com outros ataques." },
+  arena: { nome: "Arena sem caixa", desc: "A caixa vira a tela inteira. Combine com galáxia, constelação ou teia." },
+  galaxia: { nome: "Galáxia de estrelas", desc: "Estrelas grandes saem do centro em braços de espiral girando." },
+  constelacao: { nome: "Constelação", desc: "Uma grade de estrelas desce rolando pela tela." },
   deriva: { nome: "Caixa em movimento", desc: "A caixa desliza pela tela. Combine com outros ataques (modo simultâneo)." },
   pancada: { nome: "Pancada de gravidade", desc: "Arremessa a alma contra uma parede (vira alma azul naquela direção) e ossos sobem dali. Pule para escapar." },
 };
@@ -283,7 +329,20 @@ export function defaultAttack(tipo: AttackType = "chuva"): AttackConfig {
         ? "osso"
         : tipo === "flechas" || tipo === "estacas"
           ? "seta"
-          : "circulo",
+          : ({
+              crescente: "crescente",
+              rabisco: "rabisco",
+              nevasca: "diamante",
+              pinos: "diamante",
+              espada: "espada",
+              muralha: "espada",
+              guilhotina: "espada",
+              orbita: "espada",
+              estilhacos: "triangulo",
+              bolhas: "circulo",
+              galaxia: "estrela6",
+              constelacao: "estrela6",
+            } as Record<string, BulletShape>)[tipo] ?? "circulo",
     cor: "#ffffff",
     emoji: "⭐",
     imagem: "",

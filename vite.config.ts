@@ -19,7 +19,7 @@ function manifest() {
   return JSON.stringify(
     {
       name: "Batalha da Alma",
-      version: "1.5.0",
+      version: "1.6.0",
       manifest_version: 1,
       author: "emillysolveranjos",
       description: "Batalha de desviar de projéteis: o mestre escolhe o monstro, a alma, a mecânica, os ataques e os sons.",

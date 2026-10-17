@@ -74,6 +74,12 @@ const SHAPE_LABEL: Record<BulletShape, string> = {
   seta: "Seta / lança",
   emoji: "Emoji",
   imagem: "Imagem (URL)",
+  espada: "Espada",
+  triangulo: "Triângulo",
+  estrela6: "Estrela de 6 pontas",
+  crescente: "Lua crescente",
+  gota: "Gota",
+  rabisco: "Rabisco",
 };
 
 const esc = (s: string) =>

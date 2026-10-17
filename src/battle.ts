@@ -240,6 +240,10 @@ function startEngine(cfg: BattleConfig, seed: number, spectator: boolean, hp: nu
       } else sendAction(choice, "");
     },
     onSpeech: showSpeech,
+    onArena: (on) => {
+      layer.style.transition = "opacity 0.4s";
+      layer.style.opacity = on ? "0.12" : "1";
+    },
     onGesture: () => music.resume(),
     onConfirmIdle: () => {
       if (pendingChoice) sendChoice();

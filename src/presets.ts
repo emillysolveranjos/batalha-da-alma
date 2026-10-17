@@ -550,6 +550,36 @@ const FANGAMES: Def[] = [
   },
 ];
 
+// Kaizo Knight: paródia montada assistindo uma luta completa do fangame (só os padrões, desenho próprio).
+const KN = { fundoCor: "#04020a", efeito: "particulas" as const, corEfeito: "#b8a6ff", escuro: 0.45 };
+const KN_FIM = { fundoCor: "#050a1f", efeito: "estrelas" as const, corEfeito: "#8fb0ff", escuro: 0.25, tremor: 0.05 };
+const alta = { caixaL: 110, caixaA: 170 };
+
+FANGAMES.push({
+  nome: "Kaizo Knight", jogo: "Fangame",
+  descricao: "O cavaleiro de verdade, sem enrolação: luas crescentes, estocadas, neve de diamantes, X azul, cone de luz, espadas em órbita e um final sem caixa. Muito difícil.",
+  hp: 9999, atk: 18, def: 12, modo: "vermelha", caixa: [170, 150], cenario: KN,
+  acoes: ["Conferir", "Encarar de volta", "Pedir uma trégua"],
+  turnos: [
+    t("Luas crescentes", [a("crescente", 7, { ...alta })]),
+    t("Estocada", [a("estocada", 4), a("rabisco", 4, { densidade: 0.8 })]),
+    t("Pilares rabiscados", [a("rabisco", 6, { densidade: 1.1 }), a("pinos", 6, { densidade: 0.8 })], juntos),
+    t("Neve de diamantes", [a("nevasca", 8)], { cenario: { corEfeito: "#dff6ff" } }),
+    t("Visão dupla", [a("visaodupla", 7), a("pinos", 7), a("rabisco", 7, { densidade: 0.7 })], { ...juntos, cenario: { efeito: "estatica" } }),
+    t("X azul", [a("xazul", 6), a("espada", 6, { densidade: 0.7 })], juntos),
+    t("Guilhotina", [a("guilhotina", 6), a("pinos", 6, { densidade: 0.6 })], juntos),
+    t("Puxão na alma", [a("vortice", 7, { cor: "#8f7bff", velocidade: 0.9 }), a("estrelaazul", 7, { densidade: 0.8 })], { ...juntos, cenario: { escuro: 0.65 } }),
+    t("Cone de luz", [a("cone", 7), a("estilhacos", 7, { densidade: 0.8 })], juntos),
+    t("Bolhas", [a("bolhas", 7, { caixaL: 170, caixaA: 170 }), a("nevasca", 7, { densidade: 0.4 })], juntos),
+    t("Muralha de espadas", [a("muralha", 8, { ...alta, caixaL: 140 })]),
+    t("Estrela azul", [a("estrelaazul", 6), a("guilhotina", 6, { densidade: 0.6 })], juntos),
+    t("Teia e mira", [a("teia", 4), a("mira", 4)], { intensidade: 1.15 }),
+    t("Espadas em órbita", [a("orbita", 7), a("estilhacos", 7, { densidade: 0.6 })], { ...juntos, intensidade: 1.15 }),
+    t("Final — Galáxia", [a("arena", 10), a("galaxia", 10)], { ...juntos, intensidade: 1.2, cenario: KN_FIM }),
+    t("Final — Constelação", [a("arena", 11), a("constelacao", 11), a("teia", 11, { densidade: 0.5 })], { ...juntos, intensidade: 1.25, cenario: KN_FIM }),
+  ],
+});
+
 export const BUILTIN_PRESETS: PresetFile[] = [...UNDERTALE, ...DELTARUNE, ...FANGAMES].map(build);
 
 /** Aceita um preset exportado ou só uma configuração (backup antigo). */

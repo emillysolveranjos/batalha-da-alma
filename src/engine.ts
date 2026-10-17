@@ -77,6 +77,15 @@ interface Bullet {
   bounce: boolean;
   ay?: number; // gravidade própria (projéteis em arco)
   look?: BeamLook; // aparência do feixe/estaca quando ativo
+  cone?: { half: number; len: number }; // feixe em cone saindo de (x, y) na direção ang
+  burstAt?: number; // estoura depois deste tempo de vida
+  burstN?: number;
+  burstSp?: number;
+  burstForma?: BulletShape;
+  hold?: { t: number; vx: number; vy: number }; // fica parado até t, depois sai com essa velocidade
+  orbit?: { cx: number; cy: number; r: number; w: number; until: number; sp: number; track: number };
+  deco?: "anel"; // só enfeite, não machuca
+  warnColor?: string; // aviso em linha fina contínua dessa cor
   cor?: string; // cor própria (ex.: lança amarela)
   flip?: { cx: number; cy: number; done: boolean }; // lança que dá a volta
   warnRed?: boolean; // aviso em linha vermelha contínua
@@ -86,7 +95,7 @@ interface Bullet {
   dead?: boolean;
 }
 
-type BeamLook = "feixe" | "osso" | "espinhos" | "corte";
+type BeamLook = "feixe" | "osso" | "espinhos" | "corte" | "cristal";
 
 interface Cannon {
   x: number;
@@ -162,6 +171,7 @@ export interface EngineOptions {
   onSpeech?: (text: string) => void;
   onConfirmIdle?: () => void; // confirmar enquanto espera o mestre (ex.: enviar a nota com o controle)
   onGesture?: () => void; // qualquer tecla/clique/botão: usado para destravar o áudio
+  onArena?: (on: boolean) => void; // arena sem caixa: esconder o monstro
 }
 
 const imageCache = new Map<string, HTMLImageElement>();
@@ -680,6 +690,302 @@ const CHOREO: Record<
   },
 };
 
+/** Padrões inspirados no fangame "Kaizo Knight" (feitos do zero, sem nada do jogo). */
+const KAIZO: Record<string, Pattern> = {
+  crescente(a, dt, g) {
+    const { S, D, Z } = params(a);
+    every(a, "s", 0.85 / D, dt, () => {
+      const b = g.box;
+      const fromRight = (a.data.n = (a.data.n ?? 0) + 1) % 3 !== 0;
+      const gap = 46 * g.soulScale;
+      const gy = b.t + gap / 2 + a.rng() * Math.max(1, b.h - gap);
+      // a lua cobre a altura da caixa menos o vão (duas metades)
+      const top = gy - gap / 2 - b.t;
+      const bot = b.b - (gy + gap / 2);
+      const x = fromRight ? b.r + 40 : b.l - 40;
+      const vx = (fromRight ? -1 : 1) * 240 * S;
+      if (top > 6) g.spawn(a, { x, y: b.t + top / 2, vx, vy: 0, r: top / 2, rw: 16 * Z, rh: top, ang: fromRight ? 0 : Math.PI });
+      if (bot > 6) g.spawn(a, { x, y: b.b - bot / 2, vx, vy: 0, r: bot / 2, rw: 16 * Z, rh: bot, ang: fromRight ? 0 : Math.PI });
+    });
+  },
+
+  estocada(a, dt, g) {
+    const { S, D, Z } = params(a);
+    every(a, "s", 1.25 / D, dt, () => {
+      const y = g.soul.y + (a.rng() - 0.5) * 10;
+      const bm = g.spawnBeam(a, W / 2, y, W + 200, 30 * Z, 0.7 / Math.sqrt(S), 0, "feixe", 0.35);
+      bm.warnColor = "#ffffff";
+    });
+  },
+
+  rabisco(a, dt, g) {
+    const { S, D, Z } = params(a);
+    every(a, "s", 1.0 / D, dt, () => {
+      const b = g.box;
+      const left = a.rng() < 0.5;
+      const gap = 44 * g.soulScale;
+      const gy = b.t + gap / 2 + a.rng() * Math.max(1, b.h - gap);
+      const top = gy - gap / 2 - b.t;
+      const bot = b.b - (gy + gap / 2);
+      const x = left ? b.l - 12 : b.r + 12;
+      const vx = (left ? 1 : -1) * 120 * S;
+      if (top > 4) g.spawnRect(a, x, b.t + top / 2, 14 * Z, top, vx, 0);
+      if (bot > 4) g.spawnRect(a, x, b.b - bot / 2, 14 * Z, bot, vx, 0);
+    });
+  },
+
+  nevasca(a, dt, g) {
+    const { S, D, Z } = params(a);
+    const b = g.box;
+    every(a, "s", 0.09 / D, dt, () => {
+      g.spawn(a, { x: b.l - 40 + a.rng() * (b.w + 80), y: b.t - 10, vx: 25 + a.rng() * 20, vy: (60 + a.rng() * 60) * S, r: 4.5 * Z, spin: 2, maxLife: 8 });
+    });
+    every(a, "c", 1.7 / D, dt, () => {
+      const x = clamp(g.soul.x + (a.rng() - 0.5) * 40, b.l + 10, b.r - 10);
+      const h = b.h * (0.5 + a.rng() * 0.3);
+      g.spawnBeam(a, x, b.b - h / 2, 22 * Z, h, 0.7 / Math.sqrt(S), 0, "cristal", 0.55);
+    });
+  },
+
+  xazul(a, dt, g) {
+    const { S, D, Z } = params(a);
+    every(a, "s", 2.3 / D, dt, () => {
+      const b = g.box;
+      const d = Math.atan2(b.h, b.w);
+      const len = Math.hypot(b.w, b.h) + 160;
+      for (const ang of [d, -d]) {
+        const bm = g.spawnBeam(a, b.cx, b.cy, len, 22 * Z, 0.6 / Math.sqrt(S), ang, "feixe", 0.8);
+        bm.kind = "azul";
+      }
+      // corte branco que chega quando o azul some
+      const vert = a.rng() < 0.5;
+      const bm = g.spawnBeam(a, vert ? g.soul.x : b.cx, vert ? b.cy : g.soul.y, len, 16 * Z, 1.5 / Math.sqrt(S), vert ? Math.PI / 2 : 0, "corte", 0.15);
+      bm.warnRed = true;
+    });
+  },
+
+  espada(a, dt, g) {
+    const { S, D, Z } = params(a);
+    every(a, "s", 1.0 / D, dt, () => {
+      const b = g.box;
+      const x = g.soul.x;
+      const hold = 0.55 / Math.sqrt(S);
+      const w = g.spawnBeam(a, x, b.cy, 3, b.h + 120, hold, 0, "corte", 0.001);
+      w.warnColor = "#ffffff";
+      g.spawn(a, { x, y: b.t - 55, vx: 0, vy: 0, r: 45 * Z, rw: 14 * Z, rh: 95 * Z, ang: 0, hold: { t: hold, vx: 0, vy: 560 * S } });
+    });
+  },
+
+  pinos(a, dt, g) {
+    const { S, D, Z } = params(a);
+    every(a, "s", 1.5 / D, dt, () => {
+      const b = g.box;
+      const side = Math.floor(a.rng() * 4);
+      const n = 5 + Math.round(D);
+      const holdT = 0.75 / Math.sqrt(S);
+      const sp = 260 * S;
+      const skip = Math.floor(a.rng() * n);
+      for (let i = 0; i < n; i++) {
+        if (i === skip) continue;
+        const f = (i + 0.5) / n;
+        const p =
+          side === 0 ? { x: b.l + f * b.w, y: b.t + 6, vx: 0, vy: sp }
+          : side === 1 ? { x: b.r - 6, y: b.t + f * b.h, vx: -sp, vy: 0 }
+          : side === 2 ? { x: b.l + f * b.w, y: b.b - 6, vx: 0, vy: -sp }
+          : { x: b.l + 6, y: b.t + f * b.h, vx: sp, vy: 0 };
+        g.spawn(a, { x: p.x, y: p.y, vx: 0, vy: 0, r: 6 * Z, face: false, ang: Math.atan2(p.vy, p.vx), hold: { t: holdT, vx: p.vx, vy: p.vy } });
+      }
+    });
+  },
+
+  estrelaazul(a, dt, g) {
+    const { S, D, Z } = params(a);
+    every(a, "s", 2.5 / D, dt, () => {
+      const b = g.box;
+      const n = 5;
+      const base = a.rng() * Math.PI;
+      const len = Math.hypot(b.w, b.h) + 200;
+      for (let i = 0; i < n; i++) {
+        const blue = g.spawnBeam(a, b.cx, b.cy, len, 14 * Z, 0.5 / Math.sqrt(S), base + (i * Math.PI) / n, "feixe", 0.55);
+        blue.kind = "azul";
+        const white = g.spawnBeam(a, b.cx, b.cy, len, 12 * Z, 1.15 / Math.sqrt(S), base + ((i + 0.5) * Math.PI) / n, "feixe", 0.3);
+        white.warnColor = "#ffffff";
+      }
+    });
+  },
+
+  cone(a, dt, g) {
+    const { S, D } = params(a);
+    every(a, "s", 1.9 / D, dt, () => {
+      const b = g.box;
+      const right = a.rng() < 0.5;
+      const ox = right ? b.r + 140 : b.l - 140;
+      const oy = g.soul.y + (a.rng() - 0.5) * 30;
+      const ang = Math.atan2(g.soul.y - oy, g.soul.x - ox);
+      g.spawn(a, {
+        x: ox, y: oy, vx: 0, vy: 0, r: 1, ang,
+        cone: { half: 0.24, len: 900 },
+        beam: true, look: "feixe",
+        warn: 0.8 / Math.sqrt(S), fadeAt: 0.8 / Math.sqrt(S) + 0.45, maxLife: 0.8 / Math.sqrt(S) + 0.7,
+      });
+    });
+  },
+
+  estilhacos(a, dt, g) {
+    const { S, D, Z } = params(a);
+    every(a, "s", 1.2 / D, dt, () => {
+      const b = g.box;
+      const cx = b.l - 30 + a.rng() * (b.w + 60);
+      const cy = b.t - 30 + a.rng() * (b.h + 60);
+      const n = 10;
+      const off = a.rng() * Math.PI;
+      for (let i = 0; i < n; i++) {
+        const ang = off + (i / n) * Math.PI * 2;
+        g.spawn(a, { x: cx, y: cy, vx: Math.cos(ang) * 130 * S, vy: Math.sin(ang) * 130 * S, r: 6 * Z, face: true, maxLife: 5 });
+      }
+    });
+  },
+
+  bolhas(a, dt, g) {
+    const { S, D, Z } = params(a);
+    every(a, "s", 2.1 / D, dt, () => {
+      const b = g.box;
+      const n = clamp(Math.round(b.w / 60), 2, 6);
+      for (let i = 0; i < n; i++) {
+        g.spawn(a, {
+          x: b.l + ((i + 0.5) * b.w) / n, y: b.t + 26, vx: 0, vy: 0, r: 13 * Z,
+          burstAt: 0.9 / Math.sqrt(S), burstN: 10, burstSp: 115 * S, burstForma: "gota", maxLife: 3,
+        });
+      }
+    });
+  },
+
+  muralha(a, dt, g) {
+    const { S, D, Z } = params(a);
+    const b = g.box;
+    every(a, "s", 2.4 / D, dt, () => {
+      const left = (a.data.n = (a.data.n ?? 0) + 1) % 2 === 1;
+      const step = 13 * Z;
+      const slots = Math.floor(b.h / step);
+      const hole = Math.floor(a.rng() * Math.max(1, slots - 3)) + 1;
+      for (let i = 0; i < slots; i++) {
+        if (i >= hole && i < hole + 3) continue;
+        g.spawn(a, { x: left ? b.l - 30 : b.r + 30, y: b.t + step / 2 + i * step, vx: (left ? 1 : -1) * 95 * S, vy: 0, r: 20, rw: 42 * Z, rh: 6 * Z, ang: left ? 0 : Math.PI });
+      }
+    });
+    every(a, "d", 0.7 / D, dt, () => {
+      const y = g.soul.y;
+      const hold = 0.45 / Math.sqrt(S);
+      const w = g.spawnBeam(a, W / 2, y, W + 100, 2, hold, 0, "corte", 0.001);
+      w.warnColor = "#3b6bff";
+      g.spawn(a, { x: b.r + 30, y, vx: 0, vy: 0, r: 16 * Z, rw: 34 * Z, rh: 6 * Z, ang: Math.PI, hold: { t: hold, vx: -420 * S, vy: 0 } });
+    });
+  },
+
+  guilhotina(a, dt, g) {
+    const { S, D, Z } = params(a);
+    every(a, "s", 1.45 / D, dt, () => {
+      const b = g.box;
+      const cols = clamp(Math.round(b.w / 30), 4, 12);
+      const holdT = 0.65 / Math.sqrt(S);
+      const free = Math.floor(a.rng() * cols);
+      for (let i = 0; i < cols; i++) {
+        if (Math.abs(i - free) <= 0) continue;
+        if (a.rng() < 0.25) continue;
+        g.spawn(a, { x: b.l + ((i + 0.5) * b.w) / cols, y: b.t + 24, vx: 0, vy: 0, r: 22, rw: 8 * Z, rh: 44 * Z, ang: 0, hold: { t: holdT, vx: 0, vy: 430 * S } });
+      }
+    });
+  },
+
+  teia(a, dt, g) {
+    const { S, D, Z } = params(a);
+    every(a, "s", 1.8 / D, dt, () => {
+      const b = g.box;
+      const ang = 0.55 + a.rng() * 0.35;
+      const n = 3 + Math.round(D);
+      const span = Math.hypot(b.w, b.h);
+      const off = a.rng();
+      for (const sgn of [1, -1]) {
+        for (let i = 0; i < n; i++) {
+          const t = ((i + off) / n - 0.5) * span;
+          const nx = -Math.sin(sgn * ang);
+          const ny = Math.cos(sgn * ang);
+          const bm = g.spawnBeam(a, b.cx + nx * t, b.cy + ny * t, span + 300, 7 * Z, 0.75 / Math.sqrt(S), sgn * ang, "corte", 0.14);
+          bm.warnRed = true;
+        }
+      }
+    });
+  },
+
+  mira(a, dt, g) {
+    const { S, D, Z } = params(a);
+    every(a, "s", 1.45 / D, dt, () => {
+      const x = g.soul.x;
+      const y = g.soul.y;
+      const w = 0.75 / Math.sqrt(S);
+      for (const ang of [0, Math.PI / 2]) {
+        const bm = g.spawnBeam(a, x, y, 900, 18 * Z, w, ang, "feixe", 0.3);
+        bm.warnColor = "#ff3040";
+      }
+      g.spawn(a, { x, y, vx: 0, vy: 0, r: 18, deco: "anel", maxLife: w });
+    });
+  },
+
+  orbita(a, dt, g) {
+    const { S, D, Z } = params(a);
+    every(a, "s", 2.4 / D, dt, () => {
+      const n = 6 + Math.round(D * 2);
+      const R = 85;
+      const base = a.rng() * Math.PI * 2;
+      for (let i = 0; i < n; i++) {
+        const th = base + (i / n) * Math.PI * 2;
+        g.spawn(a, {
+          x: g.soul.x + Math.cos(th) * R, y: g.soul.y + Math.sin(th) * R, vx: 0, vy: 0,
+          r: 16, rw: 32 * Z, rh: 7 * Z, ang: th + Math.PI,
+          orbit: { cx: g.soul.x, cy: g.soul.y, r: R, w: 2.2 * S * (a.rng() < 0.5 ? 1 : -1), until: 1.2 / Math.sqrt(S), sp: 300 * S, track: 0.85 / Math.sqrt(S) },
+          maxLife: 4,
+        });
+      }
+    });
+  },
+
+  visaodupla(_a, _dt, g) {
+    g.doubleT = 0.2;
+  },
+
+  arena(_a, _dt, g) {
+    g.arenaT = 0.2;
+  },
+
+  galaxia(a, dt, g) {
+    const { S, D, Z } = params(a);
+    every(a, "s", 0.3 / D, dt, () => {
+      const b = g.box;
+      const arms = 5;
+      const base = a.t * 0.75 * S;
+      for (let k = 0; k < arms; k++) {
+        const ang = base + (k * Math.PI * 2) / arms;
+        g.spawn(a, { x: b.cx, y: b.cy, vx: Math.cos(ang) * 85 * S, vy: Math.sin(ang) * 85 * S, r: 10 * Z, spin: 2.5, maxLife: 9 });
+      }
+    });
+  },
+
+  constelacao(a, dt, g) {
+    const { S, D, Z } = params(a);
+    every(a, "s", 0.95 / D, dt, () => {
+      const b = g.box;
+      const step = 70;
+      const off = (a.data.n = (a.data.n ?? 0) + 1) % 2 ? 0 : step / 2;
+      const skip = Math.floor(a.rng() * (b.w / step));
+      let i = 0;
+      for (let x = b.l + off + 10; x < b.r; x += step, i++) {
+        if (i === skip) continue;
+        g.spawn(a, { x, y: b.t - 15, vx: 0, vy: 75 * S, r: 11 * Z, spin: 2, maxLife: 12 });
+      }
+    });
+  },
+};
+
 const EXTRA: Record<"canhao" | "arco" | "estacas" | "varredura" | "fios" | "pancada", Pattern> = {
   pancada(a, dt, g) {
     const { S, D, Z } = params(a);
@@ -764,7 +1070,7 @@ const EXTRA: Record<"canhao" | "arco" | "estacas" | "varredura" | "fios" | "panc
     });
   },
 };
-Object.assign(PATTERNS, EXTRA, CHOREO);
+Object.assign(PATTERNS, EXTRA, CHOREO, KAIZO);
 
 function params(a: Running) {
   return {
@@ -832,6 +1138,9 @@ export class BattleEngine {
   lastFilter = "";
   boxOff = { x: 0, y: 0 };
   pull: { x: number; y: number; f: number; t: number } | null = null;
+  doubleT = 0; // visão dupla ativa
+  arenaT = 0; // arena sem caixa ativa
+  arenaOn = false;
   shots: { x: number; y: number }[] = [];
   shotCd = 0;
   kr = 0; // karma acumulado
@@ -1040,12 +1349,24 @@ export class BattleEngine {
         th = 90;
       }
     }
-    tw = clamp(tw, 40, 600);
-    th = clamp(th, 40, 180);
+    const arena = this.phase === "ataque" && this.ending <= 0 && this.arenaT > 0;
+    if (arena !== this.arenaOn) {
+      this.arenaOn = arena;
+      this.opt.onArena?.(arena);
+    }
+    if (arena) {
+      tw = W - 24;
+      th = H - 24;
+    }
+    tw = clamp(tw, 40, arena ? W - 20 : 600);
+    th = clamp(th, 40, arena ? H - 20 : 180);
     const k = 1 - Math.pow(0.0005, dt);
     this.boxW += (tw - this.boxW) * k;
     this.boxH += (th - this.boxH) * k;
     if (this.phase !== "ataque" || this.ending > 0) this.boxOffTarget = { x: 0, y: 0 };
+    if (arena) this.boxOffTarget = { x: 0, y: H / 2 - BOX_CY };
+    this.arenaT = Math.max(0, this.arenaT - dt);
+    this.doubleT = Math.max(0, this.doubleT - dt);
     const ko = 1 - Math.pow(0.02, dt);
     this.boxOff.x += (this.boxOffTarget.x - this.boxOff.x) * ko;
     this.boxOff.y += (this.boxOffTarget.y - this.boxOff.y) * ko;
@@ -1608,6 +1929,34 @@ export class BattleEngine {
     for (const u of this.bullets) {
       u.life += dt;
       u.warn -= dt;
+      if (u.hold) {
+        if (u.life >= u.hold.t) {
+          u.vx = u.hold.vx;
+          u.vy = u.hold.vy;
+          u.hold = undefined;
+        } else {
+          u.vx = 0;
+          u.vy = 0;
+        }
+      }
+      if (u.orbit) {
+        const o = u.orbit;
+        if (u.life < o.track) {
+          o.cx = s.x;
+          o.cy = s.y;
+        }
+        if (u.life < o.until) {
+          const th = Math.atan2(u.y - o.cy, u.x - o.cx) + o.w * dt;
+          u.x = o.cx + Math.cos(th) * o.r;
+          u.y = o.cy + Math.sin(th) * o.r;
+          u.ang = th + Math.PI;
+          u.vx = u.vy = 0;
+        } else {
+          u.vx = Math.cos(u.ang) * o.sp;
+          u.vy = Math.sin(u.ang) * o.sp;
+          u.orbit = undefined;
+        }
+      }
       if (u.ay) u.vy += u.ay * dt;
       u.x += u.vx * dt;
       u.y += u.vy * dt;
@@ -1630,20 +1979,22 @@ export class BattleEngine {
         if (u.y < b.t + u.r) { u.y = b.t + u.r; u.vy = Math.abs(u.vy); }
         if (u.y > b.b - u.r) { u.y = b.b - u.r; u.vy = -Math.abs(u.vy); }
       }
-      if (u.burstY !== undefined && u.y >= u.burstY) {
+      if ((u.burstY !== undefined && u.y >= u.burstY) || (u.burstAt !== undefined && u.life >= u.burstAt)) {
         u.dead = true;
-        const n = 8;
-        const sp = Math.hypot(u.vx, u.vy) * 0.9 + 30;
+        const n = u.burstN ?? 8;
+        const sp = u.burstSp ?? Math.hypot(u.vx, u.vy) * 0.9 + 30;
+        const style = u.burstForma ? { ...u.style, forma: u.burstForma } : u.style;
         for (let i = 0; i < n; i++) {
           const ang = (i / n) * Math.PI * 2 + u.life;
-          add.push({ ...u, burstY: undefined, dead: false, r: u.r * 0.55, life: 0,
-            vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, maxLife: 6 });
+          add.push({ ...u, burstY: undefined, burstAt: undefined, dead: false, r: u.r * 0.55, life: 0, style,
+            face: !!u.burstForma, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, maxLife: 6 });
         }
+        if (u.burstAt !== undefined) this.sfx.play("escudo");
         continue;
       }
       if (u.life > u.maxLife) u.dead = true;
       if (u.x < -300 || u.x > W + 300 || u.y < -300 || u.y > H + 300) u.dead = true;
-      if (u.dead || !this.alive || u.warn > 0 || this.ending > 0) continue;
+      if (u.dead || !this.alive || u.warn > 0 || this.ending > 0 || u.deco) continue;
       if (u.beam && u.life > u.fadeAt) continue;
       if (u.beam && u.look === "feixe" && -u.warn < 0.04) continue; // o feixe ainda está abrindo
 
@@ -1711,6 +2062,15 @@ export class BattleEngine {
   }
 
   hits(u: Bullet, x: number, y: number, hr: number) {
+    if (u.cone) {
+      const dx = x - u.x;
+      const dy = y - u.y;
+      const d = Math.hypot(dx, dy);
+      if (d > u.cone.len) return false;
+      let da = Math.atan2(dy, dx) - u.ang;
+      da = Math.atan2(Math.sin(da), Math.cos(da));
+      return Math.abs(da) < u.cone.half + Math.asin(Math.min(1, hr / Math.max(hr, d)));
+    }
     if (u.rw !== undefined && u.rh !== undefined) {
       const c = Math.cos(-u.ang);
       const sn = Math.sin(-u.ang);
@@ -2052,6 +2412,18 @@ export class BattleEngine {
         g.globalAlpha = Math.min(1, u.life / 0.12) * fadeOut;
         this.drawBullet(u);
       }
+      // visão dupla: um fantasma deslocado de tudo (não machuca)
+      if (this.doubleT > 0) {
+        const off = 14 * Math.sin(this.sceneT * 1.7);
+        g.save();
+        g.translate(off, -off * 0.3);
+        for (const u of this.bullets) {
+          if (big(u)) continue;
+          g.globalAlpha = 0.32 * fadeOut;
+          this.drawBullet(u);
+        }
+        g.restore();
+      }
       g.globalAlpha = 1;
       // plataformas
       for (const pl of this.platforms) {
@@ -2076,6 +2448,14 @@ export class BattleEngine {
       if (!this.opt.spectator) this.drawSoul();
     }
 
+    if (this.arenaOn) {
+      // brilho do inimigo no meio da arena
+      const grd = g.createRadialGradient(b.cx, b.cy, 4, b.cx, b.cy, 120);
+      grd.addColorStop(0, "rgba(255,255,255,0.55)");
+      grd.addColorStop(1, "rgba(120,150,255,0)");
+      g.fillStyle = grd;
+      g.fillRect(b.cx - 120, b.cy - 120, 240, 240);
+    }
     if (this.flash > 0) {
       g.setTransform(k, 0, 0, k, 0, 0);
       g.fillStyle = `rgba(255,255,255,${this.flash})`;
@@ -2227,12 +2607,59 @@ export class BattleEngine {
     g.save();
     g.translate(u.x, u.y);
 
+    if (u.deco === "anel") {
+      const k = Math.min(1, u.life / Math.max(0.01, u.maxLife));
+      g.strokeStyle = "#ff3040";
+      g.lineWidth = 2;
+      g.beginPath();
+      g.arc(0, 0, u.r * (1.6 - k * 0.6), 0, Math.PI * 2);
+      g.stroke();
+      g.restore();
+      return;
+    }
+    if (u.cone) {
+      g.rotate(u.ang);
+      const L = u.cone.len;
+      const hw = Math.tan(u.cone.half) * L;
+      g.beginPath();
+      g.moveTo(0, 0);
+      g.lineTo(L, -hw);
+      g.lineTo(L, hw);
+      g.closePath();
+      if (u.warn > 0) {
+        if (Math.floor(u.life * 12) % 2 === 0) {
+          g.strokeStyle = "rgba(255,255,255,0.7)";
+          g.lineWidth = 2;
+          g.setLineDash([8, 6]);
+          g.stroke();
+        }
+      } else {
+        const fade = u.life > u.fadeAt ? 1 - (u.life - u.fadeAt) / 0.25 : 1;
+        const grd = g.createLinearGradient(0, 0, L, 0);
+        grd.addColorStop(0, `rgba(255,255,255,${0.95 * Math.max(0, fade)})`);
+        grd.addColorStop(1, `rgba(170,190,255,${0.55 * Math.max(0, fade)})`);
+        g.fillStyle = grd;
+        g.shadowColor = "#aabbff";
+        g.shadowBlur = 20;
+        g.fill();
+      }
+      g.restore();
+      return;
+    }
     if (u.beam) {
       g.rotate(u.ang);
       const rw = u.rw!;
       const rh = u.rh!;
       if (u.warn > 0) {
-        if (u.warnRed) {
+        if (u.warnColor) {
+          g.strokeStyle = u.warnColor;
+          g.globalAlpha *= 0.5 + 0.4 * (Math.floor(u.life * 16) % 2);
+          g.lineWidth = 1.5;
+          g.beginPath();
+          g.moveTo(-rw / 2, 0);
+          g.lineTo(rw / 2, 0);
+          g.stroke();
+        } else if (u.warnRed) {
           g.strokeStyle = `rgba(255,40,40,${0.45 + 0.4 * (Math.floor(u.life * 16) % 2)})`;
           g.lineWidth = 2;
           g.beginPath();
@@ -2265,6 +2692,27 @@ export class BattleEngine {
             drawBone(g, along ? 7 : th * rise, along ? th * rise : 7);
             g.restore();
           }
+        } else if (u.look === "cristal") {
+          // espinho de cristal subindo
+          const rise = Math.min(1, age / 0.1);
+          const hh = rh * rise;
+          g.translate(0, rh / 2);
+          g.fillStyle = "#dff6ff";
+          g.strokeStyle = "#7fd4ff";
+          g.lineWidth = 1.5;
+          g.beginPath();
+          g.moveTo(-rw / 2, 0);
+          g.lineTo(-rw * 0.15, -hh * 0.7);
+          g.lineTo(0, -hh);
+          g.lineTo(rw * 0.2, -hh * 0.6);
+          g.lineTo(rw / 2, 0);
+          g.closePath();
+          g.fill();
+          g.stroke();
+          g.beginPath();
+          g.moveTo(0, 0);
+          g.lineTo(0, -hh);
+          g.stroke();
         } else if (u.look === "corte") {
           g.shadowColor = "#ff4040";
           g.shadowBlur = 10;
@@ -2339,6 +2787,77 @@ export class BattleEngine {
       case "quadrado":
         g.fillRect(-rw / 2, -rh / 2, rw, rh);
         break;
+      case "espada": {
+        const along = !isRect || rw >= rh;
+        const len = isRect ? Math.max(rw, rh) : r * 3.2;
+        const th = isRect ? Math.min(rw, rh) : r * 0.9;
+        if (!along) g.rotate(Math.PI / 2);
+        drawSword(g, len, th, col);
+        break;
+      }
+      case "triangulo":
+        g.beginPath();
+        g.moveTo(r * 1.4, 0);
+        g.lineTo(-r * 0.9, -r * 0.9);
+        g.lineTo(-r * 0.9, r * 0.9);
+        g.closePath();
+        g.fill();
+        break;
+      case "estrela6": {
+        g.beginPath();
+        for (let i = 0; i < 12; i++) {
+          const rr = i % 2 ? r * 0.55 : r * 1.25;
+          const a = (i / 12) * Math.PI * 2;
+          g.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+        }
+        g.closePath();
+        g.fill();
+        g.fillStyle = "#1a2040";
+        g.beginPath();
+        g.arc(0, 0, r * 0.3, 0, Math.PI * 2);
+        g.fill();
+        break;
+      }
+      case "crescente": {
+        const hh = isRect ? rh / 2 : r;
+        const ww = isRect ? rw : r;
+        // rastro
+        const baseAlpha = g.globalAlpha;
+        for (let k = 3; k >= 0; k--) {
+          g.globalAlpha = baseAlpha * (k === 0 ? 1 : 0.18);
+          g.save();
+          g.translate(k * 10, 0);
+          g.beginPath();
+          g.ellipse(0, 0, ww * 1.6, hh, 0, -Math.PI / 2, Math.PI / 2, true);
+          g.ellipse(ww * 0.9, 0, ww * 0.9, hh * 0.92, 0, Math.PI / 2, -Math.PI / 2, false);
+          g.closePath();
+          g.fill();
+          g.restore();
+        }
+        break;
+      }
+      case "gota":
+        g.beginPath();
+        g.moveTo(r * 1.6, 0);
+        g.quadraticCurveTo(0, -r, -r * 0.8, 0);
+        g.quadraticCurveTo(0, r, r * 1.6, 0);
+        g.fill();
+        break;
+      case "rabisco": {
+        g.lineWidth = Math.max(2, (isRect ? Math.min(rw, rh) : r) * 0.25);
+        g.lineJoin = "round";
+        const along = isRect && rh > rw;
+        const len = isRect ? Math.max(rw, rh) : r * 2;
+        const amp = (isRect ? Math.min(rw, rh) : r) / 2;
+        g.beginPath();
+        for (let p = -len / 2, i = 0; p <= len / 2; p += 6, i++) {
+          const q = (i % 2 ? 1 : -1) * amp;
+          if (along) g.lineTo(q, p);
+          else g.lineTo(p, q);
+        }
+        g.stroke();
+        break;
+      }
       case "diamante":
         if (isRect) g.fillRect(-rw / 2, -rh / 2, rw, rh);
         else {
@@ -2479,6 +2998,7 @@ export class BattleEngine {
   drawHud() {
     const g = this.ctx;
     g.save();
+    if (this.arenaOn) g.globalAlpha = 0.45;
     g.textBaseline = "middle";
     g.font = `24px ${FONT}`;
     g.fillStyle = "#fff";
@@ -2513,6 +3033,10 @@ export class BattleEngine {
     }
 
     const labels = ["LUTAR", "AGIR", "ITEM", "POUPAR"];
+    if (this.arenaOn) {
+      g.restore();
+      return;
+    }
     const active = this.phase === "menu";
     const chosen = ["sub", "lutar", "lutarRes"].includes(this.phase);
     for (let i = 0; i < 4; i++) {
@@ -2560,6 +3084,29 @@ function drawButtonIcon(g: CanvasRenderingContext2D, i: number, x: number, y: nu
     g.lineTo(x + 3, y + 17);
     g.stroke();
   }
+  g.restore();
+}
+
+/** Espada deitada no eixo x, ponta para +x. */
+function drawSword(g: CanvasRenderingContext2D, len: number, th: number, col: string) {
+  const blade = len * 0.72;
+  const x0 = -len / 2 + len * 0.28;
+  g.save();
+  g.fillStyle = col;
+  g.strokeStyle = "rgba(0,0,0,0.6)";
+  g.lineWidth = 1;
+  g.beginPath();
+  g.moveTo(x0, -th / 2);
+  g.lineTo(x0 + blade - th, -th / 2);
+  g.lineTo(x0 + blade, 0);
+  g.lineTo(x0 + blade - th, th / 2);
+  g.lineTo(x0, th / 2);
+  g.closePath();
+  g.fill();
+  g.stroke();
+  // guarda e cabo
+  g.fillRect(x0 - th * 0.5, -th * 1.4, th * 0.6, th * 2.8);
+  g.fillRect(-len / 2, -th * 0.3, len * 0.28 - th * 0.5, th * 0.6);
   g.restore();
 }
 

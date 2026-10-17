@@ -19,7 +19,7 @@ Cada push na branch `main` publica o site de novo pelo GitHub Actions (~1 minuto
 | Aba | Para que serve |
 |---|---|
 | ⚔ **Batalha** | Vida do monstro, **fase do próximo turno** (⏭ avança), ▶ iniciar / próximo turno, 🧪 testar, 👁 assistir, encerrar, jogadores (HP, curar, repor itens), ações recebidas e resposta na caixa |
-| ★ **Presets** | 43 lutas prontas (Undertale, Deltarune e o fangame Last Breath), busca e filtros, Desfazer, salvar os seus, abrir/baixar arquivo `.json` |
+| ★ **Presets** | 44 lutas prontas (Undertale, Deltarune e os fangames Last Breath e Kaizo Knight), busca e filtros, Desfazer, salvar os seus, abrir/baixar arquivo `.json` |
 | ☻ **Monstro** | Nome, imagem (link ou token selecionado; GIF anima), tamanho, fala no balão, HP/ATK/DEF, opções do AGIR, se pode ser poupado, texto da caixa |
 | ◐ **Cenário** | Cor de fundo, efeito animado (pulso, partículas, estrelas, brasas, grade, estática), cores da borda e da caixa, escuro nas bordas, tremor, imagem de fundo. Pode ser salvo em cada fase |
 | ♥ **Alma** | Mecânica (vermelha, azul, verde, roxa, amarela), aparência, regras (HP, invencibilidade, caixa, intensidade, karma), itens dos jogadores |
@@ -50,13 +50,19 @@ Cada push na branch `main` publica o site de novo pelo GitHub Actions (~1 minuto
 - **Lanças traiçoeiras:** as amarelas dão a volta e chegam pelo lado oposto.
 - **Vórtice:** puxa a alma para o centro enquanto projéteis giram para dentro.
 
+**Do cavaleiro (Kaizo Knight):** luas crescentes, estocada, pilares rabiscados, nevasca de diamantes com espinhos de cristal,
+X azul, espada caindo, pinos de losango, estrela azul, cone de luz, estilhaços, bolhas que estouram, muralha de espadas,
+guilhotina, teia de cortes, mira, espadas em órbita, visão dupla, **arena sem caixa** (a caixa vira a tela toda),
+galáxia de estrelas e constelação.
+
 Nas fases intensas e nos disparos há clarão, tremida e aberração cromática (desligável no Cenário).
 
 ## Presets
 
-Paródias **só de moveset** de 43 lutas: os ataques, o modo da alma, o ritmo e o clima do cenário de cada fase.
+Paródias **só de moveset** de 44 lutas: os ataques, o modo da alma, o ritmo e o clima do cenário de cada fase.
 Não há arte, som, código ou fala dos jogos; a aparência do monstro e as falas ficam por conta do mestre.
-São aproximações; as marcadas "(aproximado)" são as menos fiéis.
+São aproximações; as marcadas "(aproximado)" são as menos fiéis. O **Kaizo Knight** (aba Fã) foi montado assistindo
+uma luta inteira em vídeo, ataque por ataque, e tem 16 fases terminando na arena sem caixa.
 
 - **Carregar** troca monstro, alma, ataques, caixa e cenário. Sua música, itens e regras dos jogadores continuam.
 - As **fases** entram na lista de turnos. Escolha a fase na aba Batalha antes de cada turno (⏭ passa para a próxima);
