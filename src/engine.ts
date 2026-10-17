@@ -18,7 +18,34 @@ const BOX_CY = 300;
 const MENU_BOX = { w: 570, h: 130 };
 const FONT = "VT323, monospace";
 
-type Phase = "intro" | "ataque" | "menu" | "escolhido" | "fim" | "morto";
+type Phase = "intro" | "fala" | "ataque" | "menu" | "sub" | "lutar" | "lutarRes" | "escolhido" | "fim" | "morto";
+
+/** Dados do menu LUTAR / AGIR / ITEM / POUPAR (vêm da configuração do mestre). */
+export interface MenuData {
+  monstro: { nome: string; atk: number; def: number; descricao: string; poupavel: boolean };
+  acoes: string[];
+  itens: { nome: string; cura: number; restante: number }[];
+  danoBase: number;
+  frase: string; // texto da caixa no começo do turno
+}
+
+export interface ChoiceResult {
+  escolha: "LUTAR" | "AGIR" | "ITEM" | "POUPAR";
+  opcao?: string;
+  precisao?: number; // 0-100
+  dano?: number;
+  critico?: boolean;
+  cura?: number;
+  escrever?: boolean; // o jogador quer descrever a ação com as próprias palavras
+}
+
+interface SubOption {
+  label: string;
+  color?: string;
+  run: () => void;
+}
+
+const WRITE_LABEL = "✎ Outra coisa…";
 
 interface Style {
   forma: BulletShape;
@@ -49,6 +76,13 @@ interface Bullet {
   burstY?: number;
   beam?: boolean;
   dead?: boolean;
+}
+
+interface Shard {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
 }
 
 interface Running {
@@ -84,7 +118,9 @@ export interface EngineOptions {
   hp: number;
   onHp?: (hp: number) => void;
   onDeath?: () => void;
-  onChoice?: (choice: string) => void;
+  onChoice?: (choice: ChoiceResult) => void;
+  onFight?: (dano: number, critico: boolean, errou: boolean) => void; // animação no monstro
+  menu?: MenuData;
   onSoul?: (x: number, y: number, dead: boolean) => void;
   onSpeech?: (text: string) => void;
   onConfirmIdle?: () => void; // confirmar enquanto espera o mestre (ex.: enviar a nota com o controle)
@@ -426,8 +462,16 @@ export class BattleEngine {
   padKeys = new Set<string>();
   pointer: { x: number; y: number } | null = null;
   menuSel = 0;
+  subOpts: SubOption[] = [];
+  subSel = 0;
+  fight = { x: 0, acc: 0, dano: 0, crit: false, miss: false };
+  ending = 0; // > 0: ataques acabando (projéteis somem aos poucos)
+  shards: Shard[] = [];
+  displayHp = 0;
   text = "";
   textShown = 0;
+  textAcc = 0;
+  textPause = 0;
   lastSpeech = "";
   sendT = 0;
 
@@ -445,8 +489,9 @@ export class BattleEngine {
     this.hp = opt.hp;
     this.sfx = new Sfx(this.cfg.mecanica.sons, this.cfg.audio);
     intensity = Math.max(0.3, this.cfg.mecanica.intensidade || 1);
+    this.displayHp = this.hp;
     this.buildPlan();
-    this.setText(`* ${this.cfg.monstro.nome || "Algo"} bloqueia o caminho!`);
+    this.setText(this.opt.menu?.frase || `* ${this.cfg.monstro.nome || "Algo"} bloqueia o caminho!`);
     this.bindInput();
   }
 
@@ -518,6 +563,46 @@ export class BattleEngine {
   setText(t: string) {
     this.text = t;
     this.textShown = 0;
+    this.textAcc = 0;
+    this.textPause = 0;
+  }
+
+  get textDone() {
+    return this.textShown >= this.text.length;
+  }
+
+  /** Máquina de escrever com pausas na pontuação. */
+  typeText(dt: number) {
+    if (this.textDone) return;
+    if (this.textPause > 0) {
+      this.textPause -= dt;
+      return;
+    }
+    this.textAcc += dt * 32;
+    while (this.textAcc >= 1 && !this.textDone) {
+      this.textAcc -= 1;
+      const ch = this.text[this.textShown++];
+      if (ch && ch.trim() && this.textShown % 2 === 0) this.sfx.play("texto");
+      if (".!?".includes(ch) && this.text[this.textShown] !== ch) {
+        this.textPause = 0.22;
+        this.textAcc = 0;
+        break;
+      }
+      if (ch === ",") {
+        this.textPause = 0.1;
+        this.textAcc = 0;
+        break;
+      }
+    }
+  }
+
+  get speechText() {
+    return (this.cfg.monstro.fala || "").trim();
+  }
+
+  startAttack() {
+    this.setPhase("ataque");
+    this.text = "";
   }
 
   setPhase(p: Phase) {
@@ -528,16 +613,13 @@ export class BattleEngine {
   update(dt: number) {
     this.phaseT += dt;
     this.pollGamepads();
-    if (this.textShown < this.text.length) {
-      const before = Math.floor(this.textShown);
-      this.textShown = Math.min(this.text.length, this.textShown + dt * 35);
-      if (Math.floor(this.textShown) !== before && before % 2 === 0) this.sfx.play("texto");
-    }
+    this.typeText(dt);
+    this.displayHp += (this.hp - this.displayHp) * (1 - Math.pow(0.002, dt));
 
     // caixa anima até o tamanho alvo
     let tw = MENU_BOX.w;
     let th = MENU_BOX.h;
-    if (this.phase === "ataque") {
+    if (this.phase === "ataque" || this.phase === "fala") {
       tw = 0;
       th = 0;
       for (const it of this.plan) {
@@ -562,13 +644,23 @@ export class BattleEngine {
     this.boxH += (th - this.boxH) * k;
     this.box = rect(W / 2, BOX_CY, this.boxW, this.boxH);
 
-    if (this.phase === "intro" && this.phaseT > 2.4) {
-      this.setPhase("ataque");
-      this.text = "";
-      this.placeSoul();
-    }
+    if (this.phase === "intro" && this.textDone && this.phaseT > 1.2 + this.text.length * 0.012) this.endIntro();
+    if (this.phase === "fala" && this.phaseT > Math.max(1.6, this.speechText.length * 0.055 + 1.2)) this.startAttack();
 
-    if (this.phase === "ataque") {
+    if (this.phase === "lutar") {
+      const b = this.box;
+      this.fight.x += ((b.w - 20) / 1.35) * dt;
+      if (this.fight.x > b.r - 10) this.fightStop(true);
+    }
+    if (this.phase === "lutarRes" && this.phaseT > 1.5) this.finishFight();
+
+    if (this.phase === "ataque" && this.ending > 0) {
+      this.ending -= dt;
+      if (this.ending <= 0) {
+        this.bullets = [];
+        this.endTurn();
+      }
+    } else if (this.phase === "ataque") {
       this.attackT += dt;
       for (const it of this.plan) {
         if (this.attackT >= it.start && this.attackT < it.end) {
@@ -594,23 +686,25 @@ export class BattleEngine {
           PATTERNS[it.cfg.tipo]?.(a, dt, this);
         }
       }
-      if (this.attackT >= this.totalAttack + 0.3) {
-        this.bullets = [];
-        if (this.hp > 0 || this.opt.spectator) {
-          if (this.cfg.mecanica.menuFinal && !this.opt.spectator) {
-            this.setPhase("menu");
-            this.setText("* O que você vai fazer?");
-          } else {
-            this.setPhase("fim");
-            this.setText(this.opt.spectator ? "* Turno encerrado. Escolha o próximo passo." : "* O turno acabou.");
-          }
-        }
-      }
+      if (this.attackT >= this.totalAttack + 0.2) this.ending = 0.4;
     }
 
-    if (this.phase === "ataque" || this.phase === "morto") {
+    if (this.phase === "ataque" || this.phase === "morto" || this.phase === "fala") {
       this.updateSoul(dt);
       this.updateBullets(dt);
+    }
+    if (this.phase === "morto") {
+      if (this.deadT > 0.9 && !this.shards.length) {
+        const s = this.soul;
+        for (let i = 0; i < 6; i++)
+          this.shards.push({ x: s.x, y: s.y, vx: (Math.random() - 0.5) * 160, vy: -60 - Math.random() * 120 });
+      }
+      for (const sh of this.shards) {
+        sh.vy += 300 * dt;
+        sh.x += sh.vx * dt;
+        sh.y += sh.vy * dt;
+      }
+      if (this.deadT > 2.6 && !this.text) this.setText("* Sua alma se partiu...\n* Aguarde o mestre.");
     }
 
     this.invuln = Math.max(0, this.invuln - dt);
@@ -619,8 +713,8 @@ export class BattleEngine {
 
     // fala do monstro
     let speech = "";
-    if (this.phase === "intro" || this.phase === "ataque") {
-      speech = this.cfg.monstro.fala;
+    if (this.phase === "fala") speech = this.speechText;
+    if (this.phase === "ataque" && this.ending <= 0) {
       for (const it of this.plan)
         if (this.attackT >= it.start && this.attackT < it.end && it.cfg.fala) speech = it.cfg.fala;
     }
@@ -631,12 +725,31 @@ export class BattleEngine {
 
     // envia posição da alma para os outros
     this.sendT -= dt;
-    if (this.sendT <= 0 && !this.opt.spectator && (this.phase === "ataque" || this.phase === "morto")) {
+    if (this.sendT <= 0 && !this.opt.spectator && ["ataque", "morto", "fala"].includes(this.phase)) {
       this.sendT = 0.1;
       this.opt.onSoul?.(this.soul.x, this.soul.y, this.hp <= 0);
     }
     const now = performance.now();
     for (const [id, o] of this.others) if (now - o.seen > 3000) this.others.delete(id);
+  }
+
+  endIntro() {
+    this.placeSoul();
+    if (this.speechText) {
+      this.setPhase("fala");
+      this.text = "";
+    } else this.startAttack();
+  }
+
+  endTurn() {
+    if (this.hp <= 0 && !this.opt.spectator) return;
+    if (this.cfg.mecanica.menuFinal && !this.opt.spectator) {
+      this.setPhase("menu");
+      this.setText("* O que você vai fazer?");
+    } else {
+      this.setPhase("fim");
+      this.setText(this.opt.spectator ? "* Turno encerrado. Escolha o próximo passo." : "* O turno acabou.");
+    }
   }
 
   placeSoul() {
@@ -857,7 +970,7 @@ export class BattleEngine {
       }
       if (u.life > u.maxLife) u.dead = true;
       if (u.x < -300 || u.x > W + 300 || u.y < -300 || u.y > H + 300) u.dead = true;
-      if (u.dead || !this.alive || u.warn > 0) continue;
+      if (u.dead || !this.alive || u.warn > 0 || this.ending > 0) continue;
       if (u.beam && u.life > u.fadeAt) continue;
 
       // escudo da alma verde
@@ -895,7 +1008,9 @@ export class BattleEngine {
       if (this.hp <= 0) {
         this.sfx.play("morte");
         this.setPhase("morto");
+        this.text = "";
         this.deadT = 0;
+        this.shards = [];
         this.opt.onDeath?.();
         this.opt.onSoul?.(s.x, s.y, true);
       }
@@ -942,7 +1057,26 @@ export class BattleEngine {
         }
         return;
       }
-      if (this.phase === "ataque") {
+      if (this.phase === "sub") {
+        const i = this.subAt(p.x, p.y);
+        if (i >= 0) {
+          this.subSel = i;
+          this.subOpts[i].run();
+        } else if (this.buttonAt(p.x, p.y) >= 0) {
+          this.menuSel = this.buttonAt(p.x, p.y);
+          this.choose();
+        }
+        return;
+      }
+      if (this.phase === "lutar") {
+        this.fightStop(false);
+        return;
+      }
+      if (this.phase === "intro" && this.textDone) {
+        this.endIntro();
+        return;
+      }
+      if (this.phase === "ataque" || this.phase === "fala") {
         this.pointer = p;
         this.canvas.setPointerCapture(e.pointerId);
       }
@@ -953,6 +1087,10 @@ export class BattleEngine {
       if (this.phase === "menu") {
         const i = this.buttonAt(p.x, p.y);
         if (i >= 0 && i !== this.menuSel) { this.menuSel = i; this.sfx.play("texto"); }
+      }
+      if (this.phase === "sub") {
+        const i = this.subAt(p.x, p.y);
+        if (i >= 0 && i !== this.subSel) { this.subSel = i; this.sfx.play("texto"); }
       }
     };
     const pup = () => (this.pointer = null);
@@ -980,7 +1118,9 @@ export class BattleEngine {
     unlockAudio();
     this.opt.onGesture?.();
     if (this.phase === "escolhido" && (code === "KeyZ" || code === "Enter")) this.opt.onConfirmIdle?.();
-    if (this.phase === "ataque" && this.alive) {
+    const confirm = code === "KeyZ" || code === "Enter" || code === "Space";
+    const back = code === "KeyX" || code === "Escape" || code === "Backspace";
+    if ((this.phase === "ataque" || this.phase === "fala") && this.alive) {
       if (this.mode === "verde") {
         const map: Record<string, number> = { ArrowUp: 0, KeyW: 0, ArrowRight: 1, KeyD: 1, ArrowDown: 2, KeyS: 2, ArrowLeft: 3, KeyA: 3 };
         if (code in map) s.shield = map[code];
@@ -989,21 +1129,162 @@ export class BattleEngine {
         if (code === "ArrowDown" || code === "KeyS") s.line = Math.min(2, s.line + 1);
       }
     }
+    if (this.phase === "intro" && confirm && this.textDone) return this.endIntro();
+    if (this.phase === "fala" && confirm && this.phaseT > 0.5) return this.startAttack();
     if (this.phase === "menu") {
       if (code === "ArrowLeft" || code === "KeyA") { this.menuSel = (this.menuSel + 3) % 4; this.sfx.play("texto"); }
       if (code === "ArrowRight" || code === "KeyD") { this.menuSel = (this.menuSel + 1) % 4; this.sfx.play("texto"); }
-      if (code === "KeyZ" || code === "Enter" || code === "Space") this.choose();
+      if (confirm) this.choose();
+      return;
     }
-    if (this.textShown < this.text.length && (code === "KeyX" || code === "Enter")) this.textShown = this.text.length;
+    if (this.phase === "sub") {
+      const n = this.subOpts.length;
+      const move = (d: number) => {
+        const i = this.subSel + d;
+        if (i >= 0 && i < n) {
+          this.subSel = i;
+          this.sfx.play("texto");
+        }
+      };
+      if (code === "ArrowLeft" || code === "KeyA") move(-1);
+      if (code === "ArrowRight" || code === "KeyD") move(1);
+      if (code === "ArrowUp" || code === "KeyW") move(-2);
+      if (code === "ArrowDown" || code === "KeyS") move(2);
+      if (confirm) this.subOpts[this.subSel]?.run();
+      if (back) {
+        this.setPhase("menu");
+        this.setText("* O que você vai fazer?");
+        this.textShown = this.text.length;
+      }
+      return;
+    }
+    if (this.phase === "lutar" && confirm) return this.fightStop(false);
+    if (!this.textDone && (code === "KeyX" || code === "Enter")) this.textShown = this.text.length;
+  }
+
+  // ----- menu LUTAR / AGIR / ITEM / POUPAR -----
+  get menuData(): MenuData {
+    return (
+      this.opt.menu ?? {
+        monstro: { nome: this.cfg.monstro.nome, atk: 1, def: 0, descricao: "", poupavel: false },
+        acoes: ["Conferir"],
+        itens: [],
+        danoBase: 10,
+        frase: "",
+      }
+    );
+  }
+
+  openSub(opts: SubOption[]) {
+    this.subOpts = opts;
+    this.subSel = 0;
+    this.setPhase("sub");
+    this.text = "";
   }
 
   choose() {
-    const names = ["LUTAR", "AGIR", "ITEM", "POUPAR"];
-    const c = names[this.menuSel];
+    this.sfx.play("selecionar");
+    const m = this.menuData;
+    const nome = m.monstro.nome || "Monstro";
+    switch (this.menuSel) {
+      case 0:
+        this.openSub([{ label: nome, run: () => this.startFight() }]);
+        break;
+      case 1:
+        this.openSub([
+          ...m.acoes.map((a) => ({
+            label: a,
+            run: () => {
+              if (a.trim().toLowerCase() === "conferir") {
+                const desc = m.monstro.descricao ? `\n* ${m.monstro.descricao}` : "";
+                this.finish({ escolha: "AGIR", opcao: a }, `* ${nome.toUpperCase()} - ATK ${m.monstro.atk} DEF ${m.monstro.def}${desc}`);
+              } else this.finish({ escolha: "AGIR", opcao: a }, `* Você escolheu "${a}".`);
+            },
+          })),
+          { label: WRITE_LABEL, color: "#aaaaaa", run: () => this.finish({ escolha: "AGIR", escrever: true }, "* Descreva o que você faz.") },
+        ]);
+        break;
+      case 2: {
+        const itens = m.itens.filter((i) => i.restante > 0);
+        this.openSub([
+          ...itens.map((it) => ({
+            label: `${it.nome}${it.restante > 1 ? ` x${it.restante}` : ""}`,
+            run: () => this.useItem(it),
+          })),
+          { label: WRITE_LABEL, color: "#aaaaaa", run: () => this.finish({ escolha: "ITEM", escrever: true }, "* Que item você usa?") },
+        ]);
+        break;
+      }
+      case 3:
+        this.openSub([
+          { label: "Poupar", color: m.monstro.poupavel ? "#ffff00" : undefined, run: () => this.finish({ escolha: "POUPAR", opcao: "Poupar" }, `* Você poupou ${nome}.`) },
+          { label: "Fugir", run: () => this.finish({ escolha: "POUPAR", opcao: "Fugir" }, "* Você tenta fugir...") },
+        ]);
+        break;
+    }
+  }
+
+  useItem(it: { nome: string; cura: number; restante: number }) {
+    it.restante--;
+    const max = this.cfg.mecanica.hpMax;
+    const antes = this.hp;
+    this.hp = Math.min(max, this.hp + it.cura);
+    const ganhou = this.hp - antes;
+    this.sfx.play("cura");
+    this.opt.onHp?.(this.hp);
+    const res = this.hp >= max ? "* Seu HP está no máximo!" : `* Você recuperou ${ganhou} HP!`;
+    this.finish({ escolha: "ITEM", opcao: it.nome, cura: ganhou }, `* Você usou ${it.nome}.\n${res}`);
+  }
+
+  /** Envia a escolha ao mestre e mostra o texto de espera. */
+  finish(c: ChoiceResult, msg: string) {
     this.sfx.play("selecionar");
     this.setPhase("escolhido");
-    this.setText(`* Você escolheu ${c}.\n* Aguardando o mestre...`);
+    this.setText(c.escrever ? msg : `${msg}\n* Aguardando o mestre...`);
     this.opt.onChoice?.(c);
+  }
+
+  startFight() {
+    this.setPhase("lutar");
+    this.text = "";
+    this.fight = { x: this.box.l + 10, acc: 0, dano: 0, crit: false, miss: false };
+  }
+
+  fightStop(miss: boolean) {
+    const b = this.box;
+    const m = this.menuData;
+    const acc = miss ? 0 : Math.max(0, 1 - Math.abs(this.fight.x - b.cx) / (b.w / 2 - 10));
+    const crit = !miss && acc > 0.96;
+    let dano = miss ? 0 : Math.round(m.danoBase * (0.25 + 0.75 * acc) * (crit ? 1.5 : 1)) - m.monstro.def;
+    dano = Math.max(miss ? 0 : 1, dano);
+    this.fight = { ...this.fight, acc, dano, crit, miss };
+    this.sfx.play(miss ? "texto" : "dano");
+    this.setPhase("lutarRes");
+    this.opt.onFight?.(dano, crit, miss);
+  }
+
+  finishFight() {
+    const f = this.fight;
+    const nome = this.menuData.monstro.nome || "Monstro";
+    const msg = f.miss
+      ? `* Você errou o golpe!`
+      : `* Você atacou ${nome}${f.crit ? " - CRÍTICO" : ""}!\n* ${f.dano} de dano (precisão ${Math.round(f.acc * 100)}%).`;
+    this.finish({ escolha: "LUTAR", opcao: nome, precisao: Math.round(f.acc * 100), dano: f.dano, critico: f.crit }, msg);
+  }
+
+  subRect(i: number) {
+    const b = this.box;
+    const col = i % 2;
+    const row = Math.floor(i / 2);
+    return { x: b.l + 30 + col * (b.w / 2), y: b.t + 22 + row * 32, w: b.w / 2 - 40, h: 30 };
+  }
+
+  subAt(x: number, y: number) {
+    for (let i = 0; i < this.subOpts.length; i++) {
+      const r = this.subRect(i);
+      if (x >= r.x && x <= r.x + r.w && y >= r.y - 4 && y <= r.y + r.h) return i;
+    }
+    return -1;
   }
 
   buttonAt(x: number, y: number) {
@@ -1032,16 +1313,25 @@ export class BattleEngine {
     g.lineWidth = 4;
     g.strokeRect(b.l - 2, b.t - 2, b.w + 4, b.h + 4);
 
-    // texto dentro da caixa
-    if (this.text && this.phase !== "ataque") {
+    // texto dentro da caixa (quebra de linha automática)
+    if (this.text && this.phase !== "ataque" && this.phase !== "fala") {
       g.fillStyle = "#fff";
       g.font = `26px ${FONT}`;
       g.textBaseline = "top";
-      const shown = this.text.slice(0, Math.floor(this.textShown));
-      shown.split("\n").forEach((line, i) => g.fillText(line, b.l + 22, b.t + 18 + i * 30));
+      g.textAlign = "left";
+      const lines = wrapText(g, this.text, b.w - 50);
+      let left = Math.floor(this.textShown);
+      lines.slice(0, 4).forEach((line, i) => {
+        const part = line.slice(0, Math.max(0, left));
+        left -= line.length + 1;
+        g.fillText(part, b.l + 22, b.t + 16 + i * 28);
+      });
     }
 
-    if (this.phase === "ataque" || this.phase === "morto") {
+    if (this.phase === "sub") this.drawSub();
+    if (this.phase === "lutar" || this.phase === "lutarRes") this.drawFight();
+
+    if (this.phase === "ataque" || this.phase === "morto" || this.phase === "fala") {
       // fios da alma roxa
       if (this.mode === "roxa") {
         g.strokeStyle = "#8a2be2";
@@ -1060,7 +1350,12 @@ export class BattleEngine {
         g.rect(b.l, b.t, b.w, b.h);
         g.clip();
       }
-      for (const u of this.bullets) this.drawBullet(u);
+      const fadeOut = this.ending > 0 ? Math.max(0, this.ending / 0.4) : 1;
+      for (const u of this.bullets) {
+        g.globalAlpha = Math.min(1, u.life / 0.12) * fadeOut;
+        this.drawBullet(u);
+      }
+      g.globalAlpha = 1;
       g.restore();
 
       for (const o of this.others.values()) this.drawOther(o);
@@ -1069,6 +1364,57 @@ export class BattleEngine {
 
     this.drawHud();
     g.setTransform(1, 0, 0, 1, 0, 0);
+  }
+
+  drawSub() {
+    const g = this.ctx;
+    g.save();
+    g.font = `26px ${FONT}`;
+    g.textBaseline = "top";
+    g.textAlign = "left";
+    this.subOpts.forEach((o, i) => {
+      const r = this.subRect(i);
+      g.fillStyle = o.color ?? "#fff";
+      g.fillText(`* ${o.label}`, r.x + 22, r.y);
+      if (i === this.subSel) g.drawImage(heartSprite(this.soulColor), r.x, r.y + 6, 16, 14);
+    });
+    g.restore();
+  }
+
+  /** Alvo do LUTAR: elipses concêntricas e uma barra que corre da esquerda para a direita. */
+  drawFight() {
+    const g = this.ctx;
+    const b = this.box;
+    g.save();
+    const rx = b.w / 2 - 12;
+    const ry = b.h / 2 - 12;
+    const rings = ["#1f3a5f", "#2c5d8f", "#3f86c6", "#7fc1ff"];
+    rings.forEach((c, i) => {
+      g.fillStyle = c;
+      g.beginPath();
+      g.ellipse(b.cx, b.cy, rx * (1 - i * 0.24), ry * (1 - i * 0.18), 0, 0, Math.PI * 2);
+      g.fill();
+    });
+    g.strokeStyle = "#ffffff";
+    g.lineWidth = 2;
+    g.beginPath();
+    g.moveTo(b.cx, b.t + 8);
+    g.lineTo(b.cx, b.b - 8);
+    g.stroke();
+    // marcas de distância
+    g.fillStyle = "rgba(255,255,255,0.5)";
+    for (let i = 1; i <= 4; i++) {
+      const dx = (rx / 5) * i;
+      g.fillRect(b.cx - dx - 1, b.cy - 4, 2, 8);
+      g.fillRect(b.cx + dx - 1, b.cy - 4, 2, 8);
+    }
+    const blink = this.phase === "lutarRes" && Math.floor(this.phaseT * 10) % 2 === 0;
+    g.fillStyle = blink ? "#000" : "#fff";
+    g.strokeStyle = "#000";
+    g.lineWidth = 2;
+    g.fillRect(this.fight.x - 6, b.t + 6, 12, b.h - 12);
+    g.strokeRect(this.fight.x - 6, b.t + 6, 12, b.h - 12);
+    g.restore();
   }
 
   bulletColor(u: Bullet) {
@@ -1215,7 +1561,15 @@ export class BattleEngine {
     const s = this.soul;
     const size = 16 * this.soulScale;
     if (this.phase === "morto") {
-      if (this.deadT > 2.5) return;
+      if (this.deadT > 0.9) {
+        g.fillStyle = this.soulColor;
+        for (const sh of this.shards) {
+          if (sh.y > H + 20) continue;
+          g.fillRect(Math.round(sh.x), Math.round(sh.y), 3, 3);
+          g.fillRect(Math.round(sh.x) + 3, Math.round(sh.y) + 3, 2, 2);
+        }
+        return;
+      }
       const spr = heartSprite(this.soulColor);
       const sp = Math.min(1, this.deadT * 3) * 6;
       g.save();
@@ -1298,7 +1652,7 @@ export class BattleEngine {
       g.fillStyle = "#c00";
       g.fillRect(295, 395, bw, 20);
       g.fillStyle = "#ff0";
-      g.fillRect(295, 395, bw * (this.hp / max), 20);
+      g.fillRect(295, 395, bw * Math.max(0, Math.min(1, this.displayHp / max)), 20);
       g.fillStyle = "#fff";
       g.font = `24px ${FONT}`;
       g.fillText(`${this.hp} / ${max}`, 305 + bw, 405);
@@ -1310,9 +1664,10 @@ export class BattleEngine {
 
     const labels = ["LUTAR", "AGIR", "ITEM", "POUPAR"];
     const active = this.phase === "menu";
+    const chosen = ["sub", "lutar", "lutarRes"].includes(this.phase);
     for (let i = 0; i < 4; i++) {
       const bx = 40 + i * 145;
-      const sel = active && i === this.menuSel;
+      const sel = (active || chosen) && i === this.menuSel;
       const col = sel ? "#ffff00" : active ? "#ff7f27" : "#7a4a1d";
       g.strokeStyle = col;
       g.lineWidth = 3;
@@ -1320,7 +1675,7 @@ export class BattleEngine {
       g.fillStyle = col;
       g.font = `26px ${FONT}`;
       g.textAlign = "left";
-      if (sel) g.drawImage(heartSprite(this.soulColor), bx + 8, 442, 18, 16);
+      if (sel && active) g.drawImage(heartSprite(this.soulColor), bx + 8, 442, 18, 16);
       else drawButtonIcon(g, i, bx + 8, 440, col);
       g.fillText(labels[i], bx + 34, 451);
     }
@@ -1374,6 +1729,22 @@ function drawBone(g: CanvasRenderingContext2D, w: number, h: number) {
     g.fill();
   }
   g.restore();
+}
+
+function wrapText(g: CanvasRenderingContext2D, text: string, maxW: number) {
+  const out: string[] = [];
+  for (const para of text.split("\n")) {
+    let line = "";
+    for (const word of para.split(" ")) {
+      const test = line ? `${line} ${word}` : word;
+      if (g.measureText(test).width > maxW && line) {
+        out.push(line);
+        line = `  ${word}`;
+      } else line = test;
+    }
+    out.push(line);
+  }
+  return out;
 }
 
 function clamp(v: number, a: number, b: number) {

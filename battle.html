@@ -24,7 +24,22 @@
       #note input { width: min(420px, 70vw); font: 22px VT323, monospace; background: #000; color: #fff; border: 2px solid #fff; padding: 4px 8px; }
       #note button, #top button { font: 20px VT323, monospace; background: #000; color: #ff7f27; border: 2px solid #ff7f27; padding: 2px 10px; cursor: pointer; }
       #top { position: absolute; top: 8px; right: 8px; display: flex; gap: 6px; z-index: 6; }
+      #embed { position: fixed; right: 8px; bottom: 8px; z-index: 7; display: none; border: 2px solid #fff; background: #000; }
+      #status { position: absolute; left: 10px; bottom: 10px; z-index: 6; display: none; font-size: 20px; color: #ffd84a; background: rgba(0,0,0,0.7); padding: 2px 8px; }
       #help { position: absolute; top: 8px; left: 10px; font-size: 18px; opacity: 0.6; z-index: 6; }
+      /* golpe do LUTAR */
+      #slash { position: absolute; left: 270px; width: 100px; height: 100px; opacity: 0; transform-origin: top right;
+        background: linear-gradient(135deg, transparent 46%, #ff2020 47%, #ffb0b0 50%, #ff2020 53%, transparent 54%); }
+      #slash.go { animation: slash 0.45s steps(6) forwards; }
+      @keyframes slash { 0% { opacity: 1; clip-path: inset(0 0 100% 100%); } 70% { opacity: 1; clip-path: inset(0 0 0 0); } 100% { opacity: 0; clip-path: inset(0 0 0 0); } }
+      #dmg { position: absolute; left: 0; width: 640px; text-align: center; font-size: 34px; opacity: 0; text-shadow: 2px 2px 0 #000; }
+      #dmg.go { animation: dmg 1.4s ease-out forwards; }
+      @keyframes dmg { 0% { opacity: 1; transform: translateY(8px); } 20% { transform: translateY(-10px); } 35% { transform: translateY(0); } 85% { opacity: 1; } 100% { opacity: 0; } }
+      #mhp { position: absolute; left: 245px; width: 150px; height: 12px; background: #404040; border: 2px solid #000; opacity: 0; transition: opacity 0.2s; }
+      #mhp.show { opacity: 1; }
+      #mhp div { height: 100%; width: 100%; background: #20e020; }
+      .hurt { animation: hurt 0.5s linear !important; }
+      @keyframes hurt { 0%, 100% { transform: translateX(0); } 15% { transform: translateX(-10px); } 30% { transform: translateX(9px); } 45% { transform: translateX(-7px); } 60% { transform: translateX(5px); } 75% { transform: translateX(-3px); } }
     </style>
   </head>
   <body>
@@ -35,6 +50,9 @@
         <div id="layer">
           <div id="monster"></div>
           <div id="bubble"></div>
+          <div id="slash"></div>
+          <div id="dmg"></div>
+          <div id="mhp"><div></div></div>
         </div>
       </div>
     </div>
@@ -43,6 +61,8 @@
       <button id="mute" title="Som">♪</button>
       <button id="close" title="Fechar">✕</button>
     </div>
+    <div id="embed"></div>
+    <div id="status"></div>
     <div id="focus">Clique aqui (ou aperte um botão do controle) para jogar</div>
     <div id="note">
       <input id="noteInput" maxlength="120" placeholder="O que você faz? (opcional) — Enter ou A no controle envia" />

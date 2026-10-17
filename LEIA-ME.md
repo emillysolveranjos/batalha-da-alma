@@ -42,11 +42,11 @@ Clique no ícone ♥ na barra de extensões.
 
 | Aba | O que dá para escolher |
 |---|---|
-| **Monstro** | Nome, aparência (URL ou **token selecionado** no mapa; GIFs animam), tamanho, fala no balão, fundo |
-| **Alma** | Mecânica: **Vermelha** (livre), **Azul** (gravidade/pulo), **Verde** (parada + escudo), **Roxa** (3 fios). Cor, imagem própria, tamanho, velocidade. Regras: HP, tempo de invencibilidade, tamanho da caixa, **intensidade geral** (para as fases de chefe), menu final, sons, hitboxes |
+| **Monstro** | Nome, aparência (URL ou **token selecionado** no mapa; GIFs animam), tamanho, fala no balão, texto da caixa, fundo, **HP / ATK / DEF**, descrição do "Conferir", **opções do AGIR**, se pode ser poupado |
+| **Alma** | Mecânica: **Vermelha** (livre), **Azul** (gravidade/pulo), **Verde** (parada + escudo), **Roxa** (3 fios). Cor, imagem própria, tamanho, velocidade. Regras: HP, tempo de invencibilidade, tamanho da caixa, **intensidade geral** (para as fases de chefe), dano do LUTAR, **itens dos jogadores**, menu final, sons, hitboxes |
 | **Ataques** | Lista de ataques do turno, em sequência, simultâneos ou sorteados. Cada ataque tem duração, dano, velocidade, quantidade, tamanho, **regra de cor** (branco, azul = não se mexa, laranja = mexa-se, verde = cura), **aparência do projétil** (círculo, quadrado, diamante, estrela, osso, seta, emoji ou imagem), fala própria e tamanho de caixa. **Turnos salvos** guardam conjuntos de ataques para carregar cada fase na hora |
-| **Sons** | Música (original sintetizada, nenhuma, mp3 do repositório ou link) e cada efeito (dano, escudo, texto, menu, cura, morte), com volumes e botão ▶ para ouvir |
-| **Batalha** | Iniciar / próximo turno, assistir, testar sozinho, encerrar, quem participa, HP de cada jogador (−5, +5, curar), registro das escolhas LUTAR/AGIR/ITEM/POUPAR, backup em JSON |
+| **Sons** | Música e cada efeito: padrão (original), **arquivo enviado do computador**, **YouTube**, **SoundCloud**, Google Drive, Dropbox ou link de mp3. Volumes e botão ▶ para ouvir |
+| **Batalha** | Iniciar / próximo turno, assistir, testar sozinho, encerrar, quem participa, **HP do monstro**, HP de cada jogador (−5, +5, curar), repor itens, registro das ações, backup em JSON |
 
 ### Ataques disponíveis
 
@@ -55,23 +55,31 @@ Chuva · Rajada lateral · Ossos · Anel · Espiral · Mirado · Laser · Ricoch
 ### Fluxo de um turno
 
 1. O mestre clica em **Iniciar batalha**. A tela abre em tela cheia para os jogadores marcados.
-2. Aparece a introdução e depois os ataques. Cada jogador controla **a própria alma** e vê as dos outros translúcidas.
-3. No fim, cada jogador escolhe **LUTAR / AGIR / ITEM / POUPAR** e pode escrever o que faz. O mestre recebe uma notificação.
-4. O mestre resolve a ação na mesa, ajusta o que quiser e clica em **Próximo turno**.
+2. A caixa mostra o texto do turno (ex.: "* Fulano bloqueia o caminho!"). Depois o monstro fala no balão e a caixa encolhe.
+3. Vêm os ataques. Cada jogador controla **a própria alma** e vê as dos outros translúcidas.
+4. No fim, cada jogador escolhe:
+   - **LUTAR:** uma barra corre sobre o alvo; quanto mais perto do centro, mais dano (centro perfeito = crítico).
+     O dano sai do HP do monstro automaticamente.
+   - **AGIR:** as opções que o mestre definiu. "Conferir" mostra ATK, DEF e a descrição. "Outra coisa…" deixa escrever.
+   - **ITEM:** os itens definidos pelo mestre curam na hora e acabam. "Outra coisa…" deixa escrever.
+   - **POUPAR:** Poupar (fica amarelo se o monstro pode ser poupado) ou Fugir.
+5. O mestre recebe cada ação como notificação, resolve na mesa e clica em **Próximo turno**.
 
-O HP de cada jogador fica salvo entre os turnos.
+O HP e os itens usados de cada jogador ficam salvos entre os turnos. Se o HP chega a 0, a alma se parte e o jogador assiste até o mestre curar.
 
 ## Sons e música
 
-O padrão é uma **música original sintetizada** e efeitos sintetizados, feitos para esta extensão.
-Para usar seus próprios arquivos:
+O padrão é uma **música original sintetizada** e efeitos sintetizados, feitos para esta extensão. Na aba **Sons** o mestre pode trocar cada um:
 
-1. No GitHub, abra a pasta `public/audio`, clique em **Add file → Upload files** e envie os `.mp3` (também aceita `.ogg`, `.wav` e `.m4a`).
-2. Espere ~1 minuto para o site ser atualizado.
-3. Na aba **Sons**, os arquivos aparecem com 📁 em cada lista.
+- **📤 Enviar arquivo:** escolha um mp3 do seu computador (até 10 MB). Ele fica guardado no seu navegador e vai para os jogadores
+  pelo próprio Owlbear, em pedaços (cerca de 1 MB a cada 10 s). Cada jogador baixa uma vez e guarda. Deixe a sala aberta enquanto envia.
+- **🔗 YouTube / SoundCloud:** cole o link. O player oficial aparece no canto da tela (as regras do YouTube não deixam escondê-lo).
+  Vídeos com incorporação bloqueada pelo dono não tocam.
+- **🔗 Google Drive / Dropbox:** cole o link de compartilhamento (com acesso "qualquer pessoa com o link").
+- **🔗 Link direto** para um arquivo de áudio.
+- **Spotify não funciona:** fora do app ele só libera prévias de 30 segundos.
 
-Também dá para colar um link direto para um mp3 (opção "Link (URL)"). Use apenas áudios que você tem direito de usar:
-o repositório é público.
+Use apenas áudios que você tem direito de usar.
 
 ## Controles do jogador
 
@@ -98,8 +106,10 @@ Com `npm run dev` rodando, abra no navegador:
 - `src/engine.ts`: motor da batalha (alma, padrões de ataque, colisão, desenho)
 - `src/battle.ts`: tela da batalha dentro do Owlbear (sincronização, HP, escolhas)
 - `src/main.ts`: painel do mestre e do jogador
-- `src/audio.ts`: efeitos, música original sintetizada e tocador de mp3
+- `src/audio.ts`: efeitos, música original sintetizada, tocador de arquivos, YouTube e SoundCloud
+- `src/files.ts`: guarda os arquivos de áudio no navegador e os envia em pedaços aos jogadores
+- `src/media.ts`: reconhece links (YouTube, SoundCloud, Drive, Dropbox)
 - `src/background.ts`: abre e fecha a batalha nos jogadores e avisa o mestre
 - `src/shared.ts`: tipos, padrões e lista de ataques/almas
 - `vite.config.ts`: gera o `manifest.json` e a lista `audio/lista.json`
-- `public/audio/`: seus arquivos de áudio
+- `public/audio/`: áudios opcionais que ficam junto com o site

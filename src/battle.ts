@@ -1,8 +1,10 @@
 // Página da batalha (abre como modal em tela cheia no Owlbear Rodeo).
 
 import OBR from "@owlbear-rodeo/sdk";
-import { BattleEngine, H, W } from "./engine";
-import { MusicPlayer } from "./audio";
+import { BattleEngine, ChoiceResult, H, MenuData, W } from "./engine";
+import { MusicHost, MusicPlayer } from "./audio";
+import { CH_FILE_PROGRESS, CH_FILE_READY, CH_FILE_REQ, ProgressMsg, fileUrl } from "./files";
+import { parseSource } from "./media";
 import {
   AttackType,
   BATTLE_KEY,
@@ -14,7 +16,9 @@ import {
   CH_SOUL,
   CONFIG_KEY,
   HP_KEY,
+  ITEMS_KEY,
   MODAL_ID,
+  ActionMsg,
   SOUL_INFO,
   SoulMode,
   defaultAttack,
@@ -39,7 +43,11 @@ const music = new MusicPlayer();
 let musicKey = "";
 let me = { id: "local", name: "Jogador", color: "#ff4444", gm: false };
 let currentTurn = "";
-let pendingChoice = "";
+let pendingChoice: ChoiceResult | null = null;
+let monsterHp = 0;
+let monsterHpMax = 0;
+let turnNumber = 1;
+let usedItems: Record<string, number> = {};
 let muted = false;
 try {
   muted = localStorage.getItem("batalha-mute") === "1";
@@ -95,10 +103,85 @@ function placeBubble() {
   bubble.style.maxWidth = "210px";
 }
 
+// balão com máquina de escrever
+let speechTimer = 0;
 function showSpeech(text: string) {
+  clearInterval(speechTimer);
   bubble.style.display = text ? "block" : "none";
-  bubble.textContent = text;
+  bubble.textContent = "";
   placeBubble();
+  if (!text) return;
+  let i = 0;
+  speechTimer = window.setInterval(() => {
+    i++;
+    bubble.textContent = text.slice(0, i);
+    if (i % 2 === 0 && text[i - 1]?.trim()) engine?.sfx.play("texto");
+    if (i >= text.length) clearInterval(speechTimer);
+  }, 38);
+}
+
+/** Golpe do LUTAR: corte, tremida, número de dano e barra de vida do monstro. */
+function fightFx(dano: number, crit: boolean, miss: boolean) {
+  const img = monsterEl.querySelector<HTMLElement>("img, .placeholder");
+  const slash = $("slash");
+  const dmg = $("dmg");
+  const bar = $("mhp");
+  const fill = bar.querySelector<HTMLElement>("div")!;
+  const top = monsterEl.offsetTop + monsterEl.offsetHeight / 2;
+  slash.style.top = `${top - 50}px`;
+  dmg.style.top = `${Math.max(4, top - 70)}px`;
+  bar.style.top = `${monsterEl.offsetTop + monsterEl.offsetHeight + 2}px`;
+  if (!miss) {
+    slash.classList.remove("go");
+    void slash.offsetWidth;
+    slash.classList.add("go");
+  }
+  window.setTimeout(() => {
+    dmg.textContent = miss ? "ERROU" : String(dano);
+    dmg.style.color = miss ? "#c0c0c0" : crit ? "#ffff40" : "#ff3030";
+    dmg.classList.remove("go");
+    void dmg.offsetWidth;
+    dmg.classList.add("go");
+    if (miss) return;
+    img?.classList.remove("hurt");
+    void img?.offsetWidth;
+    img?.classList.add("hurt");
+    if (monsterHpMax > 0) {
+      fill.style.transition = "none";
+      fill.style.width = `${(monsterHp / monsterHpMax) * 100}%`;
+      bar.classList.add("show");
+      monsterHp = Math.max(0, monsterHp - dano);
+      requestAnimationFrame(() => {
+        fill.style.transition = "width 0.8s ease-out";
+        fill.style.width = `${(monsterHp / monsterHpMax) * 100}%`;
+      });
+      window.setTimeout(() => bar.classList.remove("show"), 1800);
+    }
+  }, miss ? 0 : 350);
+}
+
+const FLAVOR = [
+  "* {n} não tira os olhos de você.",
+  "* {n} se prepara para atacar.",
+  "* O ar fica pesado.",
+  "* {n} respira fundo.",
+];
+
+function buildMenu(cfg: BattleConfig): MenuData {
+  const nome = cfg.monstro.nome || "Monstro";
+  const frase =
+    turnNumber <= 1
+      ? `* ${nome} bloqueia o caminho!`
+      : (cfg.monstro.frase || FLAVOR[turnNumber % FLAVOR.length]).replace(/\{n\}/g, nome);
+  return {
+    monstro: { nome, atk: cfg.monstro.atk, def: cfg.monstro.def, descricao: cfg.monstro.descricao, poupavel: cfg.monstro.poupavel },
+    acoes: cfg.monstro.acoes.filter((a) => a.trim()),
+    itens: cfg.itens
+      .filter((i) => i.nome.trim())
+      .map((i) => ({ nome: i.nome, cura: i.cura, restante: Math.max(0, i.qtd - (usedItems[i.nome] ?? 0)) })),
+    danoBase: cfg.mecanica.danoAtaque,
+    frase,
+  };
 }
 
 function helpText(mode: SoulMode, spectator: boolean) {
@@ -110,7 +193,7 @@ function helpText(mode: SoulMode, spectator: boolean) {
 function startEngine(cfg: BattleConfig, seed: number, spectator: boolean, hp: number) {
   engine?.stop();
   note.style.display = "none";
-  pendingChoice = "";
+  pendingChoice = null;
   cfg.mecanica.sons = cfg.mecanica.sons && !muted;
   engine = new BattleEngine(canvas, {
     config: cfg,
@@ -118,6 +201,8 @@ function startEngine(cfg: BattleConfig, seed: number, spectator: boolean, hp: nu
     spectator,
     playerName: me.name,
     hp,
+    menu: buildMenu(cfg),
+    onFight: fightFx,
     onHp: (v) => {
       if (OBR.isAvailable && !isTest) OBR.player.setMetadata({ [HP_KEY]: v });
     },
@@ -134,10 +219,17 @@ function startEngine(cfg: BattleConfig, seed: number, spectator: boolean, hp: nu
         );
     },
     onChoice: (choice) => {
-      pendingChoice = choice;
-      note.style.display = "flex";
-      noteInput.value = "";
-      noteInput.focus();
+      if (choice.escolha === "ITEM" && choice.opcao) {
+        usedItems[choice.opcao] = (usedItems[choice.opcao] ?? 0) + 1;
+        if (OBR.isAvailable && !isTest) OBR.player.setMetadata({ [ITEMS_KEY]: usedItems });
+      }
+      if (choice.escrever) {
+        pendingChoice = choice;
+        note.style.display = "flex";
+        noteInput.value = "";
+        noteInput.placeholder = choice.escolha === "ITEM" ? "Que item você usa? — Enter envia" : "O que você faz? — Enter envia";
+        noteInput.focus();
+      } else sendAction(choice, "");
     },
     onSpeech: showSpeech,
     onGesture: () => music.resume(),
@@ -149,9 +241,10 @@ function startEngine(cfg: BattleConfig, seed: number, spectator: boolean, hp: nu
   const key = JSON.stringify([cfg.audio.musica, cfg.audio.volMusica, cfg.mecanica.sons]);
   if (key !== musicKey) {
     musicKey = key;
-    if (cfg.mecanica.sons) music.play(cfg.audio);
+    if (cfg.mecanica.sons) music.play(cfg.audio, musicHost);
     else music.stop();
   }
+  preloadSfx(cfg);
   music.setMuted(muted);
   setupScene(cfg);
   $("help").textContent = helpText(cfg.alma.modo, spectator);
@@ -160,16 +253,38 @@ function startEngine(cfg: BattleConfig, seed: number, spectator: boolean, hp: nu
   checkFocus();
 }
 
+// ---------- arquivos de áudio do mestre ----------
+const statusEl = $("status");
+function setStatus(msg: string) {
+  statusEl.textContent = msg;
+  statusEl.style.display = msg ? "block" : "none";
+}
+function requestFile(hash: string) {
+  if (OBR.isAvailable && !isTest) OBR.broadcast.sendMessage(CH_FILE_REQ, { hash }, { destination: "REMOTE" });
+}
+const musicHost: MusicHost = { embedBox: $("embed"), onStatus: setStatus, onNeedFile: requestFile };
+
+/** Deixa os efeitos enviados pelo mestre prontos (ou pede os que faltam). */
+function preloadSfx(cfg: BattleConfig) {
+  for (const v of Object.values(cfg.audio.sons)) {
+    const s = parseSource(v);
+    if (s.kind === "arquivo") fileUrl(s.hash).then((u) => u || requestFile(s.hash));
+  }
+}
+
+function sendAction(c: ChoiceResult, texto: string) {
+  const msg: ActionMsg = { nome: me.name, ...c, texto };
+  delete (msg as { escrever?: boolean }).escrever;
+  if (OBR.isAvailable && !isTest) OBR.broadcast.sendMessage(CH_ACTION, msg, { destination: "REMOTE" });
+  else if (OBR.isAvailable) OBR.notification.show(`(teste) ${c.escolha}${c.opcao ? ` — ${c.opcao}` : ""}${texto ? `: ${texto}` : ""}`);
+}
+
 function sendChoice() {
   if (!pendingChoice) return;
   const text = noteInput.value.trim();
-  if (OBR.isAvailable && !isTest) {
-    OBR.broadcast.sendMessage(CH_ACTION, { nome: me.name, escolha: pendingChoice, texto: text }, { destination: "REMOTE" });
-  } else if (OBR.isAvailable) {
-    OBR.notification.show(`(teste) ${pendingChoice}${text ? ": " + text : ""}`);
-  }
-  if (engine) engine.setText(`* Você escolheu ${pendingChoice}.${text ? `\n* "${text.slice(0, 40)}"` : ""}\n* Aguardando o mestre...`);
-  pendingChoice = "";
+  sendAction(pendingChoice, text);
+  if (engine) engine.setText(`* ${text ? `"${text.slice(0, 60)}"` : `Você escolheu ${pendingChoice.escolha}.`}\n* Aguardando o mestre...`);
+  pendingChoice = null;
   note.style.display = "none";
   window.focus();
 }
@@ -228,6 +343,23 @@ async function runInOwlbear() {
   ]);
   me = { id, name, color, gm: role === "GM" };
 
+  OBR.broadcast.onMessage(CH_FILE_READY, (ev) => {
+    const hash = (ev.data as { hash: string }).hash;
+    fileUrl(hash).then(() => music.fileArrived(hash));
+  });
+  OBR.broadcast.onMessage(CH_FILE_PROGRESS, (ev) => {
+    const d = ev.data as ProgressMsg;
+    if (d.sending || d.done >= d.total) return;
+    setStatus(`Baixando áudio do mestre… ${Math.round((d.done / d.total) * 100)}%`);
+  });
+
+  const items = meta[ITEMS_KEY];
+  if (items && typeof items === "object") usedItems = { ...(items as Record<string, number>) };
+  OBR.player.onChange((p) => {
+    const it = p.metadata[ITEMS_KEY];
+    usedItems = it && typeof it === "object" ? { ...(it as Record<string, number>) } : {};
+  });
+
   const savedHp = (cfg: BattleConfig) => {
     const v = meta[HP_KEY];
     return typeof v === "number" ? Math.min(v, cfg.mecanica.hpMax) : cfg.mecanica.hpMax;
@@ -236,6 +368,8 @@ async function runInOwlbear() {
   if (isTest) {
     const room = await OBR.room.getMetadata();
     const cfg = normalizeConfig(room[CONFIG_KEY]);
+    monsterHpMax = monsterHp = cfg.monstro.hp;
+    usedItems = {};
     startEngine(cfg, Math.floor(Math.random() * 1e9), false, cfg.mecanica.hpMax);
     return;
   }
@@ -247,9 +381,13 @@ async function runInOwlbear() {
       OBR.modal.close(MODAL_ID);
       return;
     }
+    const cfg0 = normalizeConfig(st.config);
+    monsterHpMax = cfg0.monstro.hp;
+    monsterHp = st.monstroHp ?? monsterHpMax;
     if (st.turno === currentTurn) return;
     currentTurn = st.turno;
-    const cfg = normalizeConfig(st.config);
+    turnNumber = st.numero ?? 1;
+    const cfg = cfg0;
     const inBattle = !st.participantes?.length || st.participantes.includes(me.id);
     const spectator = me.gm || !inBattle;
     const hp = engine && !engine.opt.spectator ? Math.min(engine.hp, cfg.mecanica.hpMax) : savedHp(cfg);
@@ -283,6 +421,8 @@ function runDemo() {
     ? [{ ...defaultAttack(only), duracao: 12 }]
     : (["chuva", "ossos", "laser", "anel"] as AttackType[]).map((t) => ({ ...defaultAttack(t), duracao: 5 }));
   if (params.has("hitbox")) cfg.mecanica.mostrarHitbox = true;
+  if (params.has("rapido")) cfg.ataques.forEach((a) => (a.duracao = 1));
+  monsterHpMax = monsterHp = cfg.monstro.hp;
   me.name = "Jogador";
   startEngine(cfg, 12345, params.has("assistir"), cfg.mecanica.hpMax);
   // acesso para depuração no console do navegador

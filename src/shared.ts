@@ -9,6 +9,35 @@ export const CH_SOUL = `${ID}/soul`;
 export const CH_ACTION = `${ID}/action`;
 export const CH_HP = `${ID}/set-hp`;
 export const CH_EVENT = `${ID}/event`;
+export const ITEMS_KEY = `${ID}/itens-usados`; // metadados do jogador: { nomeDoItem: quantosUsou }
+export const CH_ITEMS_RESET = `${ID}/repor-itens`;
+
+export interface Item {
+  nome: string;
+  cura: number;
+  qtd: number;
+}
+
+/** O que o jogador escolheu no fim do turno (vai para o mestre). */
+export interface ActionMsg {
+  nome: string;
+  escolha: string;
+  opcao?: string;
+  texto?: string;
+  precisao?: number;
+  dano?: number;
+  critico?: boolean;
+  cura?: number;
+}
+
+export function describeAction(d: ActionMsg) {
+  const parts = [d.escolha];
+  if (d.opcao) parts.push(d.opcao);
+  if (d.escolha === "LUTAR" && d.dano !== undefined)
+    parts.push(d.dano ? `${d.dano} de dano${d.critico ? " (CRÍTICO)" : ""}, precisão ${d.precisao}%` : "errou");
+  if (d.cura) parts.push(`+${d.cura} HP`);
+  return `${d.nome}: ${parts.join(" — ")}${d.texto ? ` — “${d.texto}”` : ""}`;
+}
 
 export type SoulMode = "vermelha" | "azul" | "verde" | "roxa";
 export type BulletKind = "branco" | "azul" | "laranja" | "verde";
@@ -59,7 +88,15 @@ export interface BattleConfig {
     escala: number;
     fala: string;
     fundo: string; // URL de imagem de fundo opcional
+    hp: number; // 0 = sem barra de vida
+    atk: number;
+    def: number;
+    descricao: string; // aparece no "Conferir"
+    acoes: string[]; // opções do AGIR
+    poupavel: boolean; // nome fica amarelo no POUPAR
+    frase: string; // texto da caixa no começo dos turnos seguintes
   };
+  itens: Item[];
   alma: {
     modo: SoulMode;
     cor: string; // vazio = cor padrão do modo
@@ -77,6 +114,7 @@ export interface BattleConfig {
     mostrarHitbox: boolean;
     sons: boolean;
     intensidade: number; // multiplica velocidade e densidade de todos os ataques
+    danoAtaque: number; // dano base do LUTAR (acerto perfeito)
   };
   audio: AudioConfig;
   ataques: AttackConfig[];
@@ -123,6 +161,8 @@ export interface BattleState {
   seed: number;
   participantes: string[]; // ids dos jogadores; vazio = todos
   config: BattleConfig;
+  numero?: number; // 1 = primeiro turno da batalha
+  monstroHp?: number; // vida atual do monstro (o mestre atualiza)
 }
 
 export const ATTACK_INFO: Record<AttackType, { nome: string; desc: string }> = {
@@ -178,9 +218,20 @@ export function defaultConfig(): BattleConfig {
       nome: "Monstro",
       imagem: "",
       escala: 1,
-      fala: "* Prepare-se!",
+      fala: "Prepare-se!",
       fundo: "",
+      hp: 100,
+      atk: 5,
+      def: 0,
+      descricao: "",
+      acoes: ["Conferir", "Conversar", "Provocar"],
+      poupavel: false,
+      frase: "",
     },
+    itens: [
+      { nome: "Pão doce", cura: 10, qtd: 1 },
+      { nome: "Bala de mel", cura: 5, qtd: 2 },
+    ],
     alma: { modo: "vermelha", cor: "", imagem: "", tamanho: 1, velocidade: 1 },
     mecanica: {
       hpMax: 20,
@@ -192,6 +243,7 @@ export function defaultConfig(): BattleConfig {
       mostrarHitbox: false,
       sons: true,
       intensidade: 1,
+      danoAtaque: 12,
     },
     audio: {
       musica: "",
@@ -208,7 +260,12 @@ export function normalizeConfig(raw: unknown): BattleConfig {
   const d = defaultConfig();
   const c = (raw ?? {}) as Partial<BattleConfig>;
   return {
-    monstro: { ...d.monstro, ...(c.monstro ?? {}) },
+    monstro: {
+      ...d.monstro,
+      ...(c.monstro ?? {}),
+      acoes: Array.isArray(c.monstro?.acoes) ? c.monstro.acoes : d.monstro.acoes,
+    },
+    itens: Array.isArray(c.itens) ? c.itens : d.itens,
     alma: { ...d.alma, ...(c.alma ?? {}) },
     mecanica: { ...d.mecanica, ...(c.mecanica ?? {}) },
     audio: { ...d.audio, ...(c.audio ?? {}), sons: { ...d.audio.sons, ...(c.audio?.sons ?? {}) } },

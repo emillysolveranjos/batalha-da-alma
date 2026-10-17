@@ -1,5 +1,8 @@
-// Áudio: efeitos (sintetizados ou mp3 do mestre) e música (original sintetizada ou mp3 do mestre).
+// Áudio: efeitos (sintetizados ou arquivos do mestre) e música
+// (original sintetizada, arquivo enviado, link direto, YouTube ou SoundCloud).
 
+import { fileUrl, fileUrlSync } from "./files";
+import { parseSource } from "./media";
 import { AudioConfig, SfxName, resolveAudioUrl } from "./shared";
 
 let sharedCtx: AudioContext | null = null;
@@ -27,7 +30,11 @@ export class Sfx {
 
   play(name: SfxName) {
     if (!this.on) return;
-    const url = this.audio?.sons[name];
+    const src = parseSource(this.audio?.sons[name] ?? "");
+    const url =
+      src.kind === "arquivo" ? fileUrlSync(src.hash)
+      : src.kind === "url" ? src.url
+      : null; // YouTube/SoundCloud não servem para efeitos curtos
     if (url) return this.playFile(url);
     this.synth(name);
   }
@@ -178,36 +185,240 @@ export class ChipMusic {
   }
 }
 
+// ---------- players incorporados (YouTube / SoundCloud) ----------
+interface Embedded {
+  stop(): void;
+  resume(): void;
+  mute(m: boolean): void;
+}
+
+type AnyWin = Window & { YT?: any; SC?: any; onYouTubeIframeAPIReady?: () => void };
+const w = window as AnyWin;
+let ytApi: Promise<any> | null = null;
+let scApi: Promise<any> | null = null;
+
+function loadScript(src: string) {
+  const s = document.createElement("script");
+  s.src = src;
+  document.head.appendChild(s);
+  return s;
+}
+
+function loadYouTubeApi() {
+  ytApi ??= new Promise((resolve) => {
+    if (w.YT?.Player) return resolve(w.YT);
+    const prev = w.onYouTubeIframeAPIReady;
+    w.onYouTubeIframeAPIReady = () => {
+      prev?.();
+      resolve(w.YT);
+    };
+    loadScript("https://www.youtube.com/iframe_api");
+  });
+  return ytApi;
+}
+
+function loadSoundCloudApi() {
+  scApi ??= new Promise((resolve) => {
+    if (w.SC?.Widget) return resolve(w.SC);
+    loadScript("https://w.soundcloud.com/player/api.js").onload = () => resolve(w.SC);
+  });
+  return scApi;
+}
+
+/** Player oficial do YouTube, visível (as regras do YouTube não permitem esconder o player). */
+export function youTubeEmbed(
+  box: HTMLElement,
+  id: string,
+  start: number,
+  vol: number,
+  onError: (m: string) => void,
+  loop = true,
+): Embedded {
+  const holder = document.createElement("div");
+  box.appendChild(holder);
+  box.style.display = "block";
+  let player: any = null;
+  let muted = false;
+  let stopped = false;
+  loadYouTubeApi().then((YT) => {
+    if (stopped) return;
+    player = new YT.Player(holder, {
+      width: 200,
+      height: 200,
+      videoId: id,
+      playerVars: { autoplay: 1, start, playsinline: 1, rel: 0 },
+      events: {
+        onReady: (e: any) => {
+          e.target.setVolume(Math.round(clamp01(vol) * 100));
+          if (muted) e.target.mute();
+          e.target.playVideo();
+        },
+        onStateChange: (e: any) => {
+          if (loop && e.data === YT.PlayerState.ENDED) {
+            e.target.seekTo(start || 0);
+            e.target.playVideo();
+          }
+        },
+        onError: (e: any) =>
+          onError(
+            e.data === 101 || e.data === 150
+              ? "Esse vídeo não permite tocar fora do YouTube."
+              : "Não consegui tocar esse vídeo do YouTube.",
+          ),
+      },
+    });
+  });
+  return {
+    stop() {
+      stopped = true;
+      try {
+        player?.destroy();
+      } catch {
+        /* ignore */
+      }
+      box.innerHTML = "";
+      box.style.display = "none";
+    },
+    resume: () => player?.playVideo?.(),
+    mute(m) {
+      muted = m;
+      if (m) player?.mute?.();
+      else player?.unMute?.();
+    },
+  };
+}
+
+/** Player oficial do SoundCloud. */
+export function soundCloudEmbed(
+  box: HTMLElement,
+  url: string,
+  vol: number,
+  onError: (m: string) => void,
+  loop = true,
+): Embedded {
+  const iframe = document.createElement("iframe");
+  iframe.allow = "autoplay";
+  iframe.width = "200";
+  iframe.height = "120";
+  iframe.style.border = "0";
+  iframe.src = `https://w.soundcloud.com/player/?url=${encodeURIComponent(url)}&auto_play=true&visual=false&show_comments=false&hide_related=true&show_teaser=false`;
+  box.appendChild(iframe);
+  box.style.display = "block";
+  let widget: any = null;
+  loadSoundCloudApi().then((SC) => {
+    widget = SC.Widget(iframe);
+    widget.bind(SC.Widget.Events.READY, () => {
+      widget.setVolume(Math.round(clamp01(vol) * 100));
+      widget.play();
+    });
+    widget.bind(SC.Widget.Events.FINISH, () => {
+      if (!loop) return;
+      widget.seekTo(0);
+      widget.play();
+    });
+    widget.bind(SC.Widget.Events.ERROR, () => onError("Não consegui tocar esse link do SoundCloud."));
+  });
+  return {
+    stop() {
+      try {
+        widget?.pause();
+      } catch {
+        /* ignore */
+      }
+      box.innerHTML = "";
+      box.style.display = "none";
+    },
+    resume: () => widget?.play?.(),
+    mute: (m) => widget?.setVolume?.(m ? 0 : Math.round(clamp01(vol) * 100)),
+  };
+}
+
 // ---------- tocador de música ----------
+export interface MusicHost {
+  embedBox: HTMLElement; // onde aparece o player do YouTube/SoundCloud
+  onStatus?: (msg: string) => void; // mensagens para o jogador (baixando, erro…)
+  onNeedFile?: (hash: string) => void; // arquivo do mestre ainda não chegou
+}
+
 export class MusicPlayer {
   private chip: ChipMusic | null = null;
   private el: HTMLAudioElement | null = null;
+  private embed: Embedded | null = null;
   private blocked = false;
+  private muted = false;
+  private token = 0;
+  private waiting: { hash: string; audio: AudioConfig; host: MusicHost } | null = null;
 
-  play(audio: AudioConfig) {
+  async play(audio: AudioConfig, host: MusicHost) {
     this.stop();
-    if (audio.musica === "nenhuma") return;
-    if (!audio.musica) {
-      this.chip = new ChipMusic();
-      this.chip.start(audio.volMusica);
-      if (audioCtx().state === "suspended") this.blocked = true;
-      return;
+    const token = this.token;
+    const src = parseSource(audio.musica);
+    const vol = audio.volMusica;
+    const fail = (m: string) => host.onStatus?.(m);
+    switch (src.kind) {
+      case "nenhuma":
+        return;
+      case "padrao":
+        this.chip = new ChipMusic();
+        this.chip.start(vol);
+        if (audioCtx().state === "suspended") this.blocked = true;
+        break;
+      case "arquivo": {
+        const url = await fileUrl(src.hash);
+        if (token !== this.token) return;
+        if (!url) {
+          this.waiting = { hash: src.hash, audio, host };
+          host.onStatus?.(`Baixando a música do mestre (${src.name})…`);
+          host.onNeedFile?.(src.hash);
+          return;
+        }
+        host.onStatus?.("");
+        this.playElement(url, vol, fail);
+        break;
+      }
+      case "url":
+        this.playElement(resolveAudioUrl(src.url), vol, fail);
+        break;
+      case "youtube":
+        this.embed = youTubeEmbed(host.embedBox, src.id, src.start, vol, fail);
+        break;
+      case "soundcloud":
+        this.embed = soundCloudEmbed(host.embedBox, src.url, vol, fail);
+        break;
     }
-    this.el = new Audio(resolveAudioUrl(audio.musica));
+    this.setMuted(this.muted);
+  }
+
+  /** Um arquivo do mestre terminou de chegar: começa a tocar se era o que faltava. */
+  fileArrived(hash: string) {
+    if (this.waiting?.hash === hash) {
+      const { audio, host } = this.waiting;
+      this.play(audio, host);
+    }
+  }
+
+  private playElement(url: string, vol: number, fail: (m: string) => void) {
+    this.el = new Audio(url);
     this.el.loop = true;
-    this.el.volume = clamp01(audio.volMusica);
-    this.el.play().catch(() => (this.blocked = true));
+    this.el.volume = clamp01(vol);
+    this.el.onerror = () => fail("Não consegui tocar esse link de áudio.");
+    this.el.play().catch((e) => {
+      if (e?.name === "NotAllowedError") this.blocked = true;
+    });
   }
 
   /** Chamado num gesto do usuário para retomar música bloqueada pelo navegador. */
   resume() {
     unlockAudio();
     if (this.blocked && this.el) this.el.play().catch(() => {});
+    this.embed?.resume();
     this.blocked = false;
   }
 
   setMuted(m: boolean) {
+    this.muted = m;
     if (this.el) this.el.muted = m;
+    this.embed?.mute(m);
     if (this.chip && sharedCtx) {
       if (m) sharedCtx.suspend();
       else sharedCtx.resume();
@@ -215,13 +426,17 @@ export class MusicPlayer {
   }
 
   stop() {
+    this.token++;
+    this.waiting = null;
     this.chip?.stop();
     this.chip = null;
     if (this.el) {
       this.el.pause();
-      this.el.src = "";
+      this.el.removeAttribute("src");
     }
     this.el = null;
+    this.embed?.stop();
+    this.embed = null;
   }
 }
 

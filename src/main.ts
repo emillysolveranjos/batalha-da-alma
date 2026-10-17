@@ -12,7 +12,10 @@ import {
   CH_ACTION,
   CH_EVENT,
   CH_HP,
+  CH_ITEMS_RESET,
   CONFIG_KEY,
+  ActionMsg,
+  describeAction,
   HP_KEY,
   MODAL_ID,
   SFX_INFO,
@@ -23,9 +26,10 @@ import {
   defaultAttack,
   defaultConfig,
   normalizeConfig,
-  resolveAudioUrl,
 } from "./shared";
-import { ChipMusic, Sfx } from "./audio";
+import { MusicPlayer, Sfx } from "./audio";
+import { CH_FILE_PROGRESS, CH_FILE_PUSH, MAX_FILE_MB, ProgressMsg, fileUrl, hashFile, putFile } from "./files";
+import { describeSource, fileValue, parseSource } from "./media";
 
 const app = document.getElementById("app")!;
 const BATTLE_URL = `${import.meta.env.BASE_URL}battle.html`;
@@ -37,6 +41,7 @@ let players: Player[] = [];
 let tab: "monstro" | "alma" | "ataques" | "sons" | "batalha" = "batalha";
 let audioFiles: string[] = [];
 const urlMode = new Set<string>();
+let sendStatus = "";
 let selected = new Set<string>();
 let openCards = new Set<number>([0]);
 const log: string[] = [];
@@ -95,23 +100,55 @@ function range(path: string, label: string, min: number, max: number, step: numb
   const v = Number(getPath(path));
   return `<div><label>${label}: <b data-out="${path}">${fmt(path, v)}</b></label><input type="range" data-path="${path}" data-num min="${min}" max="${max}" step="${step}" value="${v}"></div>`;
 }
+/** Arquivos que o mestre já enviou neste navegador (para reaproveitar em outros campos). */
+function uploads(): { value: string; name: string }[] {
+  try {
+    return JSON.parse(localStorage.getItem("batalha-uploads") || "[]");
+  } catch {
+    return [];
+  }
+}
+function rememberUpload(value: string, name: string) {
+  const list = uploads().filter((u) => u.value !== value);
+  list.unshift({ value, name });
+  try {
+    localStorage.setItem("batalha-uploads", JSON.stringify(list.slice(0, 30)));
+  } catch {
+    /* sem armazenamento */
+  }
+}
+
 function audioField(path: string, label: string, music = false) {
   const v = String(getPath(path) ?? "");
   const special: Record<string, string> = music
     ? { "": "♪ Música original (padrão)", nenhuma: "Sem música" }
     : { "": "Som padrão (sintetizado)" };
-  const isUrl = urlMode.has(path) || (!(v in special) && !audioFiles.includes(v));
+  const files = uploads();
+  if (parseSource(v).kind === "arquivo" && !files.some((f) => f.value === v))
+    files.unshift({ value: v, name: describeSource(v).replace(/^Arquivo: /, "") });
+  const known = v in special || files.some((f) => f.value === v) || audioFiles.includes(v);
+  const isUrl = urlMode.has(path) || !known;
   const opts = [
-    ...Object.entries(special).map(([k, l]) => [k, l]),
+    ...Object.entries(special),
+    ...files.map((f) => [f.value, `📤 ${f.name}`]),
     ...audioFiles.map((f) => [f, `📁 ${f.replace(/^audio\//, "")}`]),
-    ["__url", "🔗 Link (URL)…"],
+    ["__url", music ? "🔗 Link (YouTube, SoundCloud, Drive, Dropbox, mp3)" : "🔗 Link (Drive, Dropbox, mp3)"],
   ];
   const cur = isUrl ? "__url" : v;
+  const kind = isUrl && v ? describeSource(v) : "";
   return `<label>${label}</label>
     <div class="row"><select data-audio="${path}">${opts
       .map(([k, l]) => `<option value="${esc(k)}" ${k === cur ? "selected" : ""}>${esc(l)}</option>`)
-      .join("")}</select><button class="btn shrink" data-preview="${path}" title="Ouvir">▶</button></div>
-    ${isUrl ? `<input type="text" style="margin-top:4px" data-path="${path}" value="${esc(v)}" placeholder="https://…/arquivo.mp3">` : ""}`;
+      .join("")}</select>
+      <button class="btn shrink" data-upload="${path}" title="Enviar arquivo do computador">📤</button>
+      <button class="btn shrink" data-preview="${path}" title="Ouvir">▶</button></div>
+    ${
+      isUrl
+        ? `<input type="text" style="margin-top:4px" data-path="${path}" data-rerender-blur value="${esc(v)}" placeholder="${
+            music ? "Cole o link do YouTube, SoundCloud, Drive…" : "Link direto, Drive ou Dropbox"
+          }">${kind ? `<div class="muted">Reconhecido: ${esc(kind)}</div>` : ""}`
+        : ""
+    }`;
 }
 function check(path: string, label: string) {
   return `<label class="check"><input type="checkbox" data-path="${path}" ${getPath(path) ? "checked" : ""}> ${label}</label>`;
@@ -136,8 +173,19 @@ function viewMonstro() {
     ${text("monstro.nome", "Nome do monstro / personagem")}
     ${imageField("monstro.imagem", "Aparência (URL da imagem ou token selecionado)")}
     ${range("monstro.escala", "Tamanho na tela", 0.3, 2, 0.1)}
-    ${area("monstro.fala", "Fala no balão", "* Você não vai passar daqui.")}
+    ${area("monstro.fala", "Fala no balão (antes dos ataques)", "Você não vai passar daqui.")}
+    ${text("monstro.frase", "Texto da caixa nos turnos seguintes (opcional)", "* {n} te encara. — {n} vira o nome")}
     ${imageField("monstro.fundo", "Fundo da batalha (opcional)")}
+    <h2>Status</h2>
+    <div class="grid3">
+      ${num("monstro.hp", "HP (0 = sem barra)", 0, 99999)}
+      ${num("monstro.atk", "ATK", 0, 999)}
+      ${num("monstro.def", "DEF", 0, 999)}
+    </div>
+    ${text("monstro.descricao", "Descrição do “Conferir”", "Parece cansado de lutar.")}
+    <label>Opções do AGIR (uma por linha; “Conferir” mostra o status)</label>
+    <textarea data-lines="monstro.acoes">${esc(cfg.monstro.acoes.join("\n"))}</textarea>
+    ${check("monstro.poupavel", "Pode ser poupado (nome fica amarelo no POUPAR)")}
     <p class="muted">Dica: selecione um token no mapa e clique em <b>Token</b> para usar a arte dele.</p>`;
 }
 
@@ -166,6 +214,10 @@ function viewAlma() {
       ${num("mecanica.caixaA", "Altura da caixa", 40, 180, 10)}
     </div>
     ${range("mecanica.intensidade", "Intensidade geral (fases do chefe)", 0.5, 2.5, 0.1)}
+    ${num("mecanica.danoAtaque", "Dano do LUTAR com acerto perfeito", 0, 9999)}
+    <h2>Itens dos jogadores</h2>
+    <p class="muted">Um por linha: <b>nome | cura | quantidade</b>. Cada jogador tem os próprios.</p>
+    <textarea data-items>${esc(cfg.itens.map((i) => `${i.nome} | ${i.cura} | ${i.qtd}`).join("\n"))}</textarea>
     ${check("mecanica.menuFinal", "Mostrar LUTAR / AGIR / ITEM / POUPAR no fim do turno")}
     ${check("mecanica.sons", "Efeitos sonoros")}
     ${check("mecanica.mostrarHitbox", "Mostrar hitboxes (para testar)")}`;
@@ -247,16 +299,22 @@ function viewSons() {
   const sfx = (Object.keys(SFX_INFO) as SfxName[]).map((k) => audioField(`audio.sons.${k}`, SFX_INFO[k])).join("");
   return `
     ${check("mecanica.sons", "Ativar música e efeitos sonoros")}
+    ${sendStatus ? `<div class="status on" id="sendStatus" style="margin-top:6px">${esc(sendStatus)}</div>` : ""}
     <h2>Música da batalha</h2>
     ${audioField("audio.musica", "Faixa (toca em loop)", true)}
+    <div id="previewBox" class="hidden" style="margin-top:6px"></div>
     ${range("audio.volMusica", "Volume da música", 0, 1, 0.05)}
     <h2>Efeitos</h2>
     ${sfx}
     ${range("audio.volSons", "Volume dos efeitos", 0, 1, 0.05)}
-    <h2>Usar seus próprios mp3</h2>
-    <p class="muted"><b>Arquivos do repositório:</b> envie os .mp3 para a pasta <code>public/audio</code> do repositório no GitHub
-    (Add file → Upload files). Cerca de 1 minuto depois, eles aparecem nas listas acima com 📁.</p>
-    <p class="muted"><b>Link:</b> escolha “Link (URL)” e cole um endereço direto para um .mp3 que qualquer pessoa consiga abrir.</p>
+    <h2>Como funciona</h2>
+    <p class="muted"><b>📤 Enviar arquivo:</b> escolha um mp3 do seu computador (até ${MAX_FILE_MB} MB). Ele fica guardado no seu navegador
+    e é enviado aos jogadores pelo próprio Owlbear (cerca de 1 MB a cada 10 s). Cada jogador baixa uma vez e guarda.
+    Deixe a sala aberta enquanto envia. Se trocar de computador, envie de novo.</p>
+    <p class="muted"><b>🔗 YouTube e SoundCloud:</b> cole o link do vídeo ou da faixa. O player oficial aparece no canto da tela da batalha
+    (o YouTube não deixa esconder o player). Vídeos com incorporação bloqueada não tocam.</p>
+    <p class="muted"><b>🔗 Google Drive / Dropbox:</b> cole o link de compartilhamento (precisa estar como "qualquer pessoa com o link").</p>
+    <p class="muted"><b>Spotify não funciona:</b> fora do app ele só libera prévias de 30 segundos.</p>
     <p class="muted">Use apenas áudios que você tem direito de usar.</p>`;
 }
 
@@ -280,7 +338,17 @@ function viewBatalha() {
     })
     .join("");
   return `
-    <div class="status ${active ? "on" : ""}">${active ? "● Batalha em andamento" : "○ Nenhuma batalha ativa"}</div>
+    <div class="status ${active ? "on" : ""}">${active ? `● Batalha em andamento — turno ${battle?.numero ?? 1}` : "○ Nenhuma batalha ativa"}</div>
+    ${
+      active && cfg.monstro.hp > 0
+        ? `<div class="player"><span class="name">❤ ${esc(cfg.monstro.nome)}</span>
+            <div class="hpbar" style="width:110px"><div style="width:${Math.max(0, Math.min(100, ((battle?.monstroHp ?? cfg.monstro.hp) / cfg.monstro.hp) * 100))}%;background:#20e020"></div></div>
+            <span class="muted">${battle?.monstroHp ?? cfg.monstro.hp}/${cfg.monstro.hp}</span>
+            <button class="btn small" data-act="mhp" data-d="-10">−10</button>
+            <button class="btn small" data-act="mhp" data-d="10">+10</button>
+            <button class="btn small" data-act="mhp" data-d="max">♥</button></div>`
+        : ""
+    }
     <button class="btn big go" data-act="start">▶ ${active ? "Próximo turno" : "Iniciar batalha"}</button>
     <div class="row">
       <button class="btn" data-act="watch" ${active ? "" : "disabled"}>👁 Assistir</button>
@@ -291,7 +359,10 @@ function viewBatalha() {
     <h2>Jogadores</h2>
     <p class="muted">Marque quem entra na batalha (nenhum marcado = todos).</p>
     ${rows || '<p class="muted">Nenhum jogador conectado.</p>'}
-    <button class="btn" style="margin-top:6px" data-act="heal-all">♥ Curar todos</button>
+    <div class="row" style="margin-top:6px">
+      <button class="btn" data-act="heal-all">♥ Curar todos</button>
+      <button class="btn" data-act="reset-items">🎒 Repor itens</button>
+    </div>
     <h2>Ações dos jogadores</h2>
     <div class="log">${log.length ? log.map((l) => `<div>${esc(l)}</div>`).join("") : '<span class="muted">As escolhas (LUTAR/AGIR/ITEM/POUPAR) aparecem aqui.</span>'}</div>
     <h2>Backup</h2>
@@ -325,6 +396,20 @@ function render() {
 // ---------- eventos ----------
 app.addEventListener("input", (e) => {
   const el = e.target as HTMLInputElement;
+  if (el.dataset.lines) {
+    setPath(el.dataset.lines, el.value.split("\n").map((l) => l.trim()).filter(Boolean));
+    save();
+    return;
+  }
+  if (el.dataset.items !== undefined) {
+    cfg.itens = el.value
+      .split("\n")
+      .map((l) => l.split("|").map((x) => x.trim()))
+      .filter((p) => p[0])
+      .map(([nome, cura, qtd]) => ({ nome, cura: Number(cura) || 0, qtd: Math.max(1, Number(qtd) || 1) }));
+    save();
+    return;
+  }
   const path = el.dataset.path;
   if (!path) return;
   let v: unknown = el.type === "checkbox" ? el.checked : el.value;
@@ -365,10 +450,16 @@ app.addEventListener("change", (e) => {
 });
 
 app.addEventListener("click", async (e) => {
-  const el = (e.target as HTMLElement).closest<HTMLElement>("[data-tab],[data-act],[data-mode],[data-token],[data-hp],[data-preview]");
+  const el = (e.target as HTMLElement).closest<HTMLElement>(
+    "[data-tab],[data-act],[data-mode],[data-token],[data-hp],[data-preview],[data-upload]",
+  );
   if (!el) return;
   if (el.dataset.preview) {
     preview(el.dataset.preview);
+    return;
+  }
+  if (el.dataset.upload) {
+    pickFile(el.dataset.upload);
     return;
   }
   if (el.dataset.tab) {
@@ -459,6 +550,20 @@ app.addEventListener("click", async (e) => {
       return;
     case "heal-all":
       return setHp([], "max");
+    case "reset-items":
+      if (inOBR) {
+        OBR.broadcast.sendMessage(CH_ITEMS_RESET, {}, { destination: "REMOTE" });
+        OBR.notification.show("Itens dos jogadores repostos.", "SUCCESS");
+      }
+      return;
+    case "mhp": {
+      if (!inOBR || !battle?.ativo) return;
+      const d = el.dataset.d!;
+      const atual = battle.monstroHp ?? cfg.monstro.hp;
+      const novo = d === "max" ? cfg.monstro.hp : Math.max(0, Math.min(cfg.monstro.hp, atual + Number(d)));
+      await OBR.room.setMetadata({ [BATTLE_KEY]: { ...battle, monstroHp: novo } });
+      return;
+    }
     case "export": {
       const ta = document.getElementById("json") as HTMLTextAreaElement;
       ta.classList.remove("hidden");
@@ -496,37 +601,62 @@ app.addEventListener("click", async (e) => {
   render();
 });
 
+// ---------- enviar arquivo ----------
+function pickFile(path: string) {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "audio/*,.mp3,.ogg,.wav,.m4a";
+  input.onchange = async () => {
+    const f = input.files?.[0];
+    if (!f) return;
+    if (f.size > MAX_FILE_MB * 1024 * 1024) {
+      notify(`Arquivo grande demais (máximo ${MAX_FILE_MB} MB). Tente um mp3 com qualidade menor.`, "WARNING");
+      return;
+    }
+    const data = await f.arrayBuffer();
+    const hash = await hashFile(data);
+    await putFile({ hash, name: f.name, type: f.type || "audio/mpeg", data });
+    const value = fileValue(hash, f.name);
+    rememberUpload(value, f.name);
+    urlMode.delete(path);
+    setPath(path, value);
+    save();
+    if (inOBR) OBR.broadcast.sendMessage(CH_FILE_PUSH, { hash }, { destination: "LOCAL" });
+    sendStatus = `Enviando ${f.name} para os jogadores…`;
+    render();
+  };
+  input.click();
+}
+
+function notify(msg: string, variant: "INFO" | "WARNING" | "ERROR" | "SUCCESS" = "INFO") {
+  if (inOBR) OBR.notification.show(msg, variant);
+  else console.log(msg);
+}
+
 // ---------- prévia de áudio ----------
-let previewEl: HTMLAudioElement | null = null;
-let previewChip: ChipMusic | null = null;
+let previewMusic: MusicPlayer | null = null;
 let previewTimer = 0;
 function stopPreview() {
   clearTimeout(previewTimer);
-  previewEl?.pause();
-  previewEl = null;
-  previewChip?.stop();
-  previewChip = null;
+  previewMusic?.stop();
+  previewMusic = null;
+  document.getElementById("previewBox")?.classList.add("hidden");
 }
-function preview(path: string) {
-  const playing = previewEl || previewChip;
+async function preview(path: string) {
+  const wasPlaying = !!previewMusic;
   stopPreview();
-  if (playing && path === "audio.musica") return; // segundo clique para a prévia
-  const v = String(getPath(path) ?? "");
   if (path === "audio.musica") {
-    if (v === "nenhuma") return;
-    if (!v) {
-      previewChip = new ChipMusic();
-      previewChip.start(cfg.audio.volMusica);
-    } else {
-      previewEl = new Audio(resolveAudioUrl(v));
-      previewEl.volume = cfg.audio.volMusica;
-      previewEl.play().catch(() => {
-        if (inOBR) OBR.notification.show("Não consegui tocar esse arquivo.", "WARNING");
-      });
-    }
-    previewTimer = window.setTimeout(stopPreview, 10000);
+    if (wasPlaying) return; // segundo clique para a prévia
+    const box = document.getElementById("previewBox")!;
+    box.classList.remove("hidden");
+    previewMusic = new MusicPlayer();
+    previewMusic.play(cfg.audio, { embedBox: box, onStatus: (m) => m && notify(m, "WARNING") });
+    previewMusic.resume();
+    previewTimer = window.setTimeout(stopPreview, 20000);
     return;
   }
+  const src = parseSource(String(getPath(path) ?? ""));
+  if (src.kind === "arquivo") await fileUrl(src.hash);
   new Sfx(true, cfg.audio).play(path.split(".").pop() as SfxName);
 }
 
@@ -561,6 +691,8 @@ async function startTurn() {
     seed: Math.floor(Math.random() * 1e9),
     participantes: [...selected],
     config: structuredClone(cfg),
+    numero: battle?.ativo ? (battle.numero ?? 1) + 1 : 1,
+    monstroHp: battle?.ativo ? Math.min(battle.monstroHp ?? cfg.monstro.hp, cfg.monstro.hp) : cfg.monstro.hp,
   };
   if (!inOBR) return;
   await OBR.room.setMetadata({ [CONFIG_KEY]: cfg, [BATTLE_KEY]: st });
@@ -645,21 +777,30 @@ async function init() {
   render();
 
   OBR.room.onMetadataChange((m) => {
-    const was = battle?.ativo;
+    const was = JSON.stringify([battle?.ativo, battle?.monstroHp, battle?.numero]);
     battle = (m[BATTLE_KEY] as BattleState) ?? null;
-    if (tab === "batalha" && was !== battle?.ativo) render();
+    const now = JSON.stringify([battle?.ativo, battle?.monstroHp, battle?.numero]);
+    if (tab === "batalha" && was !== now && !(document.activeElement instanceof HTMLTextAreaElement)) render();
   });
   OBR.party.onChange((p) => {
     players = p;
     if (tab === "batalha") render();
   });
-  OBR.broadcast.onMessage(CH_ACTION, (ev) => {
-    const d = ev.data as { nome: string; escolha: string; texto: string };
-    pushLog(`${d.nome}: ${d.escolha}${d.texto ? ` — “${d.texto}”` : ""}`);
-  });
+  OBR.broadcast.onMessage(CH_ACTION, (ev) => pushLog(describeAction(ev.data as ActionMsg)));
   OBR.broadcast.onMessage(CH_EVENT, (ev) => {
     const d = ev.data as { tipo: string; nome: string };
     if (d.tipo === "morte") pushLog(`💔 A alma de ${d.nome} se partiu.`);
+  });
+  OBR.broadcast.onMessage(CH_FILE_PROGRESS, (ev) => {
+    const d = ev.data as ProgressMsg;
+    if (!d.sending) return;
+    sendStatus =
+      d.done >= d.total
+        ? "✓ Áudio enviado para os jogadores conectados."
+        : `Enviando áudio para os jogadores… ${Math.round((d.done / d.total) * 100)}%`;
+    const el = document.getElementById("sendStatus");
+    if (el) el.textContent = sendStatus;
+    else if (tab === "sons") render();
   });
 }
 
