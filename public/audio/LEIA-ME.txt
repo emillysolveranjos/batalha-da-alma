@@ -1,0 +1,3 @@
+Coloque aqui os arquivos .mp3 (ou .ogg, .wav, .m4a) que o mestre pode escolher na aba "Sons".
+Depois de enviar pelo GitHub (Add file -> Upload files), o site é atualizado sozinho em ~1 minuto.
+Use apenas áudios que você tem direito de usar.

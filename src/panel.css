@@ -1,0 +1,61 @@
+:root {
+  --bg: #1b1b22;
+  --card: #262631;
+  --line: #3a3a48;
+  --text: #ececf1;
+  --muted: #9a9aab;
+  --accent: #ff7f27;
+  --gold: #ffd84a;
+  --danger: #ff4d5e;
+  --ok: #3ccf6e;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.4 system-ui, sans-serif; }
+#app { padding: 10px 12px 16px; }
+h1 { font: 30px VT323, monospace; margin: 0 0 6px; color: var(--gold); letter-spacing: 1px; display: flex; align-items: center; gap: 8px; }
+h1 .heart { color: #ff2a2a; }
+h2 { font: 22px VT323, monospace; margin: 14px 0 6px; color: var(--accent); }
+.tabs { display: flex; gap: 4px; margin-bottom: 10px; }
+.tabs button { flex: 1; font: 18px VT323, monospace; background: transparent; color: var(--muted); border: 2px solid var(--line); border-radius: 4px; padding: 3px 0; cursor: pointer; }
+.tabs button.on { color: var(--gold); border-color: var(--gold); }
+label { display: block; margin: 8px 0 3px; color: var(--muted); font-size: 12px; }
+input[type="text"], input[type="number"], input[type="url"], select, textarea {
+  width: 100%; background: #111117; color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 5px 7px; font: inherit;
+}
+textarea { resize: vertical; min-height: 54px; }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+input[type="color"] { width: 44px; height: 28px; padding: 0; border: 1px solid var(--line); background: none; border-radius: 4px; }
+.row { display: flex; gap: 8px; align-items: center; }
+.row > * { flex: 1; }
+.row > .shrink { flex: 0 0 auto; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+.grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0 8px; }
+.check { display: flex; align-items: center; gap: 6px; margin: 6px 0; color: var(--text); font-size: 13px; }
+button { font: inherit; cursor: pointer; }
+.btn { background: #33333f; color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 5px 10px; }
+.btn:hover { border-color: var(--accent); }
+.btn.big { width: 100%; font: 22px VT323, monospace; padding: 6px; margin-top: 6px; }
+.btn.go { background: #3a2410; border-color: var(--accent); color: var(--gold); }
+.btn.stop { background: #3a1018; border-color: var(--danger); color: #ffb3bc; }
+.btn.small { padding: 2px 7px; font-size: 12px; }
+.muted { color: var(--muted); font-size: 12px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin: 8px 0; }
+.card-head { display: flex; align-items: center; gap: 6px; }
+.card-head .num { font: 20px VT323, monospace; color: var(--gold); width: 20px; }
+.card-head select { flex: 1; }
+.souls { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.soul-opt { border: 2px solid var(--line); border-radius: 6px; padding: 6px 8px; cursor: pointer; background: var(--card); }
+.soul-opt.on { border-color: var(--gold); }
+.soul-opt b { display: block; font: 20px VT323, monospace; }
+.preview { max-height: 70px; max-width: 100%; display: block; margin-top: 6px; image-rendering: pixelated; border-radius: 4px; }
+.player { display: flex; align-items: center; gap: 6px; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.player .dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+.player .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hpbar { width: 70px; height: 8px; background: #600; border-radius: 2px; overflow: hidden; flex: 0 0 auto; }
+.hpbar div { height: 100%; background: var(--gold); }
+.status { font: 20px VT323, monospace; padding: 6px 8px; border-radius: 4px; background: #111117; border: 1px solid var(--line); }
+.status.on { color: var(--ok); border-color: var(--ok); }
+.log { max-height: 140px; overflow: auto; background: #111117; border: 1px solid var(--line); border-radius: 4px; padding: 6px; font-size: 12px; }
+.log div { padding: 2px 0; border-bottom: 1px dashed #2c2c38; }
+.hidden { display: none !important; }
+.btn:disabled { opacity: 0.4; cursor: default; border-color: var(--line); }
