@@ -31,7 +31,7 @@ Cada push na branch `main` publica o site de novo pelo GitHub Actions (~1 minuto
 - **Vermelha:** move livre (Shift = devagar).
 - **Azul:** gravidade e pulo; a pancada muda a gravidade para qualquer parede.
 - **Verde:** parada no centro; as setas viram o escudo.
-- **Roxa:** presa em 3 fios.
+- **Roxa:** presa nos fios (3 na caixa normal, até 6 numa caixa alta).
 - **Amarela:** move livre e atira para cima com Z; os tiros destroem projéteis redondos.
 - **Karma (KR):** opção de regra. Cada toque tira 1 e envenena; o HP vai drenando (nunca mata sozinho).
 
@@ -55,14 +55,22 @@ X azul, espada caindo, pinos de losango, estrela azul, cone de luz, estilhaços,
 guilhotina, teia de cortes, mira, espadas em órbita, visão dupla, **arena sem caixa** (a caixa vira a tela toda),
 galáxia de estrelas e constelação.
 
+**Das lutas do Undertale (vídeo de referência):** mãos de fogo, torretas, mísseis teleguiados, bumerangue,
+bichinho faminto (bocarra no fundo da caixa), bombas e blocos (atirar na bomba solta uma explosão em cruz),
+globo de luz, golpe azul/laranja (a caixa toda), correntes em onda, raios com aviso de "!" e roda de fogo.
+
+Cada ataque pode ter a própria caixa (largura e altura, até 320 de altura): é assim que uma fase vira um corredor
+comprido, uma coluna estreita ou uma caixa alta.
+
 Nas fases intensas e nos disparos há clarão, tremida e aberração cromática (desligável no Cenário).
 
 ## Presets
 
 Paródias **só de moveset** de 44 lutas: os ataques, o modo da alma, o ritmo e o clima do cenário de cada fase.
 Não há arte, som, código ou fala dos jogos; a aparência do monstro e as falas ficam por conta do mestre.
-São aproximações; as marcadas "(aproximado)" são as menos fiéis. O **Kaizo Knight** (aba Fã) foi montado assistindo
-uma luta inteira em vídeo, ataque por ataque, e tem 16 fases terminando na arena sem caixa.
+São aproximações. Foram montadas assistindo às lutas em vídeo, ataque por ataque: o **Kaizo Knight** (aba Fã, 16 fases)
+e as lutas principais do Undertale (Toriel, Mad Dummy, Muffet, Mettaton, Papyrus, Undyne, Undyne a Imortal, Asgore,
+Sans, Omega Flowey e Asriel). Os outros monstros e o Deltarune ainda são de memória.
 
 - **Carregar** troca monstro, alma, ataques, caixa e cenário. Sua música, itens e regras dos jogadores continuam.
 - As **fases** entram na lista de turnos, agrupadas e numeradas. Carregar outro preset troca as fases (seus turnos salvos ficam).

@@ -290,7 +290,7 @@ function viewAlma() {
         ${num("mecanica.hpMax", "HP máximo", 1, 999)}
         ${num("mecanica.invencivel", "Invencível após dano (s)", 0, 5, 0.1)}
         ${num("mecanica.caixaL", "Largura da caixa", 40, 600, 10)}
-        ${num("mecanica.caixaA", "Altura da caixa", 40, 180, 10)}
+        ${num("mecanica.caixaA", "Altura da caixa", 40, 320, 10)}
       </div>
       ${range("mecanica.intensidade", "Intensidade geral", 0.5, 2.5, 0.1)}
       ${num("mecanica.danoAtaque", "Dano do LUTAR (acerto perfeito)", 0, 9999)}

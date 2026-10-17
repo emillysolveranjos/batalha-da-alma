@@ -84,8 +84,16 @@ interface Bullet {
   burstSp?: number;
   burstForma?: BulletShape;
   hold?: { t: number; vx: number; vy: number }; // fica parado até t, depois sai com essa velocidade
-  orbit?: { cx: number; cy: number; r: number; w: number; until: number; sp: number; track: number };
-  deco?: "anel"; // só enfeite, não machuca
+  orbit?: { cx: number; cy: number; r: number; w: number; until: number; sp: number; track: number; dr?: number };
+  deco?: "anel" | "mao" | "torre" | "globo"; // só enfeite, não machuca
+  free?: boolean; // desenhado fora da caixa (sem recorte)
+  ax?: number; // aceleração horizontal (bumerangue)
+  home?: { until: number; turn: number }; // persegue a alma até "until", virando no máximo "turn" rad/s
+  wave?: { x0: number; amp: number; w: number; ph: number }; // x oscila em volta de x0
+  osc?: { y0: number; amp: number; w: number }; // sobe e desce a partir de y0
+  swing?: { a0: number; amp: number; w: number }; // ângulo balança em volta de a0
+  bomba?: boolean; // ao ser atingida pelo tiro, explode em cruz
+  boca?: boolean; // desenho da bocarra do bichinho
   warnColor?: string; // aviso em linha fina contínua dessa cor
   cor?: string; // cor própria (ex.: lança amarela)
   flip?: { cx: number; cy: number; done: boolean }; // lança que dá a volta
@@ -96,7 +104,7 @@ interface Bullet {
   dead?: boolean;
 }
 
-type BeamLook = "feixe" | "osso" | "espinhos" | "corte" | "cristal";
+type BeamLook = "feixe" | "osso" | "espinhos" | "corte" | "cristal" | "raio" | "golpe" | "luz";
 
 interface Cannon {
   x: number;
@@ -1065,13 +1073,215 @@ const EXTRA: Record<"canhao" | "arco" | "estacas" | "varredura" | "fios" | "panc
     const { S, D, Z } = params(a);
     const b = g.box;
     every(a, "s", 0.5 / D, dt, () => {
-      const i = Math.floor(a.rng() * 3);
+      const i = Math.floor(a.rng() * g.nLines);
       const left = a.rng() < 0.5;
       g.spawn(a, { x: left ? b.l - 10 : b.r + 10, y: g.lineY(i), vx: (left ? 1 : -1) * 120 * S, vy: 0, r: 7 * Z });
     });
   },
 };
-Object.assign(PATTERNS, EXTRA, CHOREO, KAIZO);
+// Ataques montados a partir das lutas do vídeo de referência (só o movimento; desenhos simples nossos).
+const VIDEO: Record<string, Pattern> = {
+  maos(a, dt, g) {
+    const { S, D, Z } = params(a);
+    const b = g.box;
+    const sweep = 1.6 / Math.sqrt(S);
+    const cycle = sweep + 0.45;
+    const n = Math.floor(a.t / cycle);
+    const k = a.t - n * cycle;
+    if (a.data.n !== n + 1) {
+      // nova varredura: por cima (2 de 3) ou descendo pelos lados
+      a.data.n = n + 1;
+      a.data.side = n % 3 === 2 ? 1 : 0;
+      a.data.dir = a.rng() < 0.5 ? 1 : -1;
+      if (a.data.side) {
+        for (const sx of [-1, 1])
+          g.spawn(a, { x: sx < 0 ? b.l - 22 : b.r + 22, y: b.t - 30, vx: 0, vy: (b.h + 60) / sweep, r: 10, deco: "mao", free: true, ang: sx < 0 ? 0 : Math.PI, spin: 0, maxLife: sweep });
+      } else {
+        const x0 = a.data.dir > 0 ? b.l - 30 : b.r + 30;
+        g.spawn(a, { x: x0, y: b.t - 20, vx: (a.data.dir * (b.w + 60)) / sweep, vy: 0, r: 10, deco: "mao", free: true, ang: Math.PI / 2, spin: 0, maxLife: sweep });
+      }
+    }
+    if (k > sweep) return;
+    const f = k / sweep;
+    every(a, "s", 0.13 / D, dt, () => {
+      if (a.data.side) {
+        const y = b.t - 30 + f * (b.h + 60);
+        for (const sx of [-1, 1])
+          g.spawn(a, { x: sx < 0 ? b.l - 8 : b.r + 8, y, vx: -sx * (95 + a.rng() * 40) * S, vy: (a.rng() - 0.5) * 30, r: 6 * Z, maxLife: 6 });
+      } else {
+        const x = a.data.dir > 0 ? b.l - 30 + f * (b.w + 60) : b.r + 30 - f * (b.w + 60);
+        g.spawn(a, { x, y: b.t - 8, vx: a.data.dir * 15 + (a.rng() - 0.5) * 30, vy: (80 + a.rng() * 50) * S, r: 6 * Z, maxLife: 6 });
+      }
+    });
+  },
+
+  torretas(a, dt, g) {
+    const { S, D, Z } = params(a);
+    const b = g.box;
+    const n = Math.min(8, 3 + Math.round(D * 2));
+    if (!a.data.init) {
+      a.data.init = 1;
+      const off = a.rng();
+      for (let i = 0; i < n; i++) {
+        const p = perimeterPoint(b, (off + i / n) % 1, 22);
+        a.data["x" + i] = p.x;
+        a.data["y" + i] = p.y;
+        g.spawn(a, { x: p.x, y: p.y, vx: 0, vy: 0, r: 9, deco: "torre", free: true, ang: 0, spin: 0, maxLife: a.cfg.duracao - a.t });
+      }
+    }
+    every(a, "s", 0.5 / D, dt, () => {
+      const i = Math.floor(a.rng() * n);
+      const x = a.data["x" + i];
+      const y = a.data["y" + i];
+      const d = Math.hypot(g.soul.x - x, g.soul.y - y) || 1;
+      const sp = 150 * S;
+      g.spawn(a, { x, y, vx: ((g.soul.x - x) / d) * sp, vy: ((g.soul.y - y) / d) * sp, r: 5 * Z, face: true, maxLife: 5 });
+    });
+  },
+
+  teleguiado(a, dt, g) {
+    const { S, D, Z } = params(a);
+    const b = g.box;
+    every(a, "s", 1.3 / D, dt, () => {
+      const p = perimeterPoint(b, a.rng(), 30);
+      const ang = Math.atan2(g.soul.y - p.y, g.soul.x - p.x);
+      const sp = 100 * S;
+      const count = 2 + Math.round(D);
+      for (let i = 0; i < count; i++)
+        g.spawn(a, {
+          x: p.x - Math.cos(ang) * i * 18,
+          y: p.y - Math.sin(ang) * i * 18,
+          vx: Math.cos(ang) * sp,
+          vy: Math.sin(ang) * sp,
+          r: 5 * Z,
+          face: true,
+          home: { until: 2.4, turn: 2.4 * S },
+          maxLife: 7,
+        });
+    });
+  },
+
+  bumerangue(a, dt, g) {
+    const { S, D, Z } = params(a);
+    const b = g.box;
+    every(a, "s", 0.75 / D, dt, () => {
+      const left = a.rng() < 0.5;
+      const y = g.mode === "roxa" ? g.lineY(Math.floor(a.rng() * g.nLines)) : b.t + 12 + a.rng() * (b.h - 24);
+      const v = 240 * S;
+      const acc = (v * v) / (1.5 * b.w); // freia a 3/4 da caixa e volta
+      g.spawn(a, { x: left ? b.l - 12 : b.r + 12, y, vx: left ? v : -v, vy: 0, ax: left ? -acc : acc, r: 7 * Z, spin: 9, maxLife: (2 * v) / acc + 1 });
+    });
+  },
+
+  bichinho(a, _dt, g) {
+    const { S, Z } = params(a);
+    if (a.data.init) return;
+    a.data.init = 1;
+    const b = g.box;
+    const rh = 70 * Z;
+    g.spawn(a, {
+      x: b.cx, y: b.b + rh / 2, vx: 0, vy: 0, r: rh / 2, rw: b.w + 20, rh, ang: 0, spin: 0,
+      boca: true,
+      osc: { y0: b.b + rh / 2 + 4, amp: b.h * 0.42 + 6, w: 1.4 * S },
+      maxLife: a.cfg.duracao - a.t,
+    });
+  },
+
+  bombas(a, dt, g) {
+    const { S, D, Z } = params(a);
+    const b = g.box;
+    const cols = Math.max(3, Math.floor(b.w / 30));
+    every(a, "s", 0.42 / D, dt, () => {
+      const x = b.l + (Math.floor(a.rng() * cols) + 0.5) * (b.w / cols);
+      const vy = 55 * S;
+      if (a.rng() < 0.4) g.spawn(a, { x, y: b.t - 10, vx: 0, vy, r: 8 * Z, bomba: true, ang: 0, spin: 0, maxLife: 12 });
+      else g.spawnRect(a, x, b.t - 10, 20 * Z, 20 * Z, 0, vy, true);
+    });
+  },
+
+  discoteca(a, _dt, g) {
+    const { S, D, Z } = params(a);
+    if (a.data.init) return;
+    a.data.init = 1;
+    const b = g.box;
+    const px = b.cx;
+    const py = b.t + 12;
+    const len = Math.hypot(b.w, b.h) * 1.2;
+    const n = D >= 1.3 ? 3 : 2;
+    const left = a.cfg.duracao - a.t;
+    g.spawn(a, { x: px, y: py, vx: 0, vy: 0, r: 12, deco: "globo", free: true, ang: 0, spin: 2, maxLife: left });
+    for (let i = 0; i < n; i++) {
+      const a0 = Math.PI / 2 + (i - (n - 1) / 2) * 0.75;
+      const bm = g.spawn(a, {
+        x: px, y: py, vx: 0, vy: 0, r: len / 2, rw: len, rh: 10 * Z, ang: a0, spin: 0,
+        warn: 0.9, fadeAt: Math.max(1, left - 0.2), maxLife: left + 0.2,
+        beam: true, look: "luz",
+        pivot: { x: px, y: py, len },
+        swing: { a0, amp: 0.55, w: (1.1 + i * 0.25) * S },
+      });
+      bm.kind = a.cfg.tipoDano === "branco" ? (i % 2 ? "laranja" : "azul") : a.cfg.tipoDano;
+      bm.warnColor = KIND_COLOR[bm.kind] ?? "#ffffff";
+    }
+  },
+
+  golpecor(a, dt, g) {
+    const { S, D } = params(a);
+    every(a, "s", 1.7 / D, dt, () => {
+      const b = g.box;
+      const size = Math.hypot(b.w, b.h) + 60;
+      const ang = (a.rng() < 0.5 ? 1 : -1) * 0.45;
+      const bm = g.spawnBeam(a, b.cx, b.cy, size, size, 0.95 / Math.sqrt(S), ang, "golpe", 0.28);
+      bm.kind = a.cfg.tipoDano === "branco" ? (a.rng() < 0.5 ? "azul" : "laranja") : a.cfg.tipoDano;
+    });
+  },
+
+  ondas(a, dt, g) {
+    const { S, D, Z } = params(a);
+    const b = g.box;
+    const cols = Math.max(1, Math.round(b.w / 110));
+    const amp = (b.w / cols) * 0.4;
+    every(a, "s", 0.07, dt, () => {
+      for (let c = 0; c < cols; c++) {
+        const x0 = b.l + (c + 0.5) * (b.w / cols);
+        for (const ph of [0, Math.PI])
+          g.spawn(a, { x: x0, y: b.b + 10, vx: 0, vy: -85 * S, r: 5 * Z, wave: { x0, amp, w: 2.3 * S, ph: ph + a.t * 0.8 * D }, maxLife: (b.h + 30) / (85 * S) });
+      }
+    });
+  },
+
+  raios(a, dt, g) {
+    const { S, D, Z } = params(a);
+    every(a, "s", 1.35 / D, dt, () => {
+      const b = g.box;
+      const n = Math.max(3, Math.round(b.w / 45));
+      const set = (a.data.k = (a.data.k ?? 0) + 1) % 2;
+      const cw = b.w / n;
+      for (let i = set; i < n; i += 2) g.spawnBeam(a, b.l + (i + 0.5) * cw, b.cy, cw * 0.7 * Z, b.h + 20, 0.8 / Math.sqrt(S), 0, "raio", 0.35);
+    });
+  },
+
+  roda(a, dt, g) {
+    const { S, D, Z } = params(a);
+    every(a, "s", 2.7 / D, dt, () => {
+      const b = g.box;
+      const n = 24;
+      const R = Math.hypot(b.w, b.h) / 2 + 30;
+      const T = 2.4 / Math.sqrt(S);
+      const w = (a.rng() < 0.5 ? 1 : -1) * 1.2 * S;
+      const hole = Math.floor(a.rng() * n);
+      for (let i = 0; i < n; i++) {
+        if ((i - hole + n) % n < 3) continue;
+        const ang = (i / n) * Math.PI * 2;
+        g.spawn(a, {
+          x: b.cx + Math.cos(ang) * R, y: b.cy + Math.sin(ang) * R, vx: 0, vy: 0, r: 6 * Z,
+          orbit: { cx: b.cx, cy: b.cy, r: R, w, until: T + 9, sp: 0, track: 0, dr: (R - 4) / T },
+          maxLife: T,
+        });
+      }
+    });
+  },
+};
+Object.assign(PATTERNS, EXTRA, CHOREO, KAIZO, VIDEO);
 
 function params(a: Running) {
   return {
@@ -1360,7 +1570,7 @@ export class BattleEngine {
       th = H - 24;
     }
     tw = clamp(tw, 40, arena ? W - 20 : 600);
-    th = clamp(th, 40, arena ? H - 20 : 180);
+    th = clamp(th, 40, arena ? H - 20 : 320);
     const k = 1 - Math.pow(0.0005, dt);
     this.boxW += (tw - this.boxW) * k;
     this.boxH += (th - this.boxH) * k;
@@ -1371,7 +1581,8 @@ export class BattleEngine {
     const ko = 1 - Math.pow(0.02, dt);
     this.boxOff.x += (this.boxOffTarget.x - this.boxOff.x) * ko;
     this.boxOff.y += (this.boxOffTarget.y - this.boxOff.y) * ko;
-    this.box = rect(W / 2 + this.boxOff.x, BOX_CY + this.boxOff.y, this.boxW, this.boxH);
+    const lift = arena ? 0 : Math.max(0, this.boxH - 180) / 2; // caixas altas crescem para cima
+    this.box = rect(W / 2 + this.boxOff.x, BOX_CY + this.boxOff.y - lift, this.boxW, this.boxH);
     this.flash = Math.max(0, this.flash - dt * 2.2);
     this.sceneT += dt;
     if (this.pull) {
@@ -1526,11 +1737,11 @@ export class BattleEngine {
     const b = this.box;
     const s = this.soul;
     s.vx = s.vy = 0;
-    const fb = rect(W / 2, BOX_CY, this.targetW(), this.targetH());
+    const fb = rect(W / 2, BOX_CY - Math.max(0, this.targetH() - 180) / 2, this.targetW(), this.targetH());
     s.x = fb.cx;
     if (this.mode === "vermelha") s.y = fb.cy + fb.h * 0.25;
     else if (this.mode === "azul") s.y = fb.b - 10;
-    else if (this.mode === "roxa") s.line = 1, (s.y = fb.cy);
+    else if (this.mode === "roxa") s.line = Math.floor(clamp(Math.floor(fb.h / 48), 3, 6) / 2), (s.y = fb.cy);
     else s.y = fb.cy;
     void b;
   }
@@ -1543,7 +1754,7 @@ export class BattleEngine {
   targetH() {
     if (this.mode === "verde") return 90;
     const it = this.plan[0];
-    return clamp((it && it.cfg.caixaA) || this.cfg.mecanica.caixaA, 40, 180);
+    return clamp((it && it.cfg.caixaA) || this.cfg.mecanica.caixaA, 40, 320);
   }
 
   /** Lê controles (Gamepad API) e os converte nas mesmas "teclas" do teclado. */
@@ -1692,7 +1903,9 @@ export class BattleEngine {
       }
     } else if (this.mode === "roxa") {
       s.x += clamp(inp.x, -1, 1) * sp * (inp.slow ? 0.5 : 1) * dt;
-      if (this.pointer) s.line = clamp(Math.round(((this.pointer.y - b.t) / b.h) * 4 - 1), 0, 2);
+      const nl = this.nLines;
+      if (this.pointer) s.line = clamp(Math.round(((this.pointer.y - b.t) / b.h) * (nl + 1) - 1), 0, nl - 1);
+      s.line = Math.min(s.line, nl - 1);
       const ly = this.lineY(s.line);
       s.y += (ly - s.y) * (1 - Math.pow(0.000001, dt));
     }
@@ -1719,8 +1932,13 @@ export class BattleEngine {
     s.moving = Math.hypot(s.x - ox, s.y - oy) > 0.3;
   }
 
+  /** Número de fios da alma roxa: 3 na caixa normal, até 6 numa caixa bem alta. */
+  get nLines() {
+    return clamp(Math.floor(this.box.h / 48), 3, 6);
+  }
+
   lineY(i: number) {
-    return this.box.t + (this.box.h * (i + 1)) / 4;
+    return this.box.t + (this.box.h * (i + 1)) / (this.nLines + 1);
   }
 
   spawn(a: Running, p: Partial<Bullet> & { x: number; y: number; vx: number; vy: number; r: number }): Bullet {
@@ -1940,8 +2158,20 @@ export class BattleEngine {
           u.vy = 0;
         }
       }
+      if (u.home && u.life < u.home.until && this.alive) {
+        // vira aos poucos na direção da alma
+        const cur = Math.atan2(u.vy, u.vx);
+        let d = Math.atan2(s.y - u.y, s.x - u.x) - cur;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        const na = cur + clamp(d, -u.home.turn * dt, u.home.turn * dt);
+        const sp = Math.hypot(u.vx, u.vy);
+        u.vx = Math.cos(na) * sp;
+        u.vy = Math.sin(na) * sp;
+      }
       if (u.orbit) {
         const o = u.orbit;
+        if (o.dr) o.r = Math.max(0, o.r - o.dr * dt);
         if (u.life < o.track) {
           o.cx = s.x;
           o.cy = s.y;
@@ -1959,9 +2189,13 @@ export class BattleEngine {
         }
       }
       if (u.ay) u.vy += u.ay * dt;
+      if (u.ax) u.vx += u.ax * dt;
       u.x += u.vx * dt;
       u.y += u.vy * dt;
+      if (u.wave) u.x = u.wave.x0 + u.wave.amp * Math.sin(u.wave.w * u.life + u.wave.ph);
+      if (u.osc) u.y = u.osc.y0 - u.osc.amp * (0.5 - 0.5 * Math.cos(u.osc.w * u.life));
       u.ang += u.spin * dt;
+      if (u.swing) u.ang = u.swing.a0 + u.swing.amp * Math.sin(u.swing.w * u.life);
       if (u.face) u.ang = Math.atan2(u.vy, u.vx);
       if (u.flip && !u.flip.done && Math.hypot(u.x - u.flip.cx, u.y - u.flip.cy) < 105) {
         u.flip.done = true;
@@ -2006,6 +2240,15 @@ export class BattleEngine {
           this.shots.splice(hit, 1);
           u.dead = true;
           this.sfx.play("escudo");
+          if (u.bomba) {
+            // explosão em cruz no lugar da bomba
+            const beam = (x: number, y: number, rw: number, rh: number): Bullet => ({
+              ...u, bomba: false, x, y, vx: 0, vy: 0, r: Math.max(rw, rh) / 2, rw, rh, ang: 0, spin: 0, face: false,
+              life: 0, warn: 0.12, fadeAt: 0.42, maxLife: 0.67, beam: true, look: "feixe", dead: false, kind: "branco",
+            });
+            add.push(beam(b.cx, u.y, b.w + 40, 18), beam(u.x, b.cy, 18, b.h + 40));
+            this.sfx.fx("impacto");
+          }
           continue;
         }
       }
@@ -2179,7 +2422,7 @@ export class BattleEngine {
         if (code in map) s.shield = map[code];
       } else if (this.mode === "roxa") {
         if (code === "ArrowUp" || code === "KeyW") s.line = Math.max(0, s.line - 1);
-        if (code === "ArrowDown" || code === "KeyS") s.line = Math.min(2, s.line + 1);
+        if (code === "ArrowDown" || code === "KeyS") s.line = Math.min(this.nLines - 1, s.line + 1);
       }
     }
     if (this.phase === "intro" && confirm && this.textDone) return this.endIntro();
@@ -2399,7 +2642,7 @@ export class BattleEngine {
       if (this.mode === "roxa") {
         g.strokeStyle = "#8a2be2";
         g.lineWidth = 2;
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < this.nLines; i++) {
           const y = this.lineY(i);
           g.beginPath();
           g.moveTo(b.l, y);
@@ -2414,7 +2657,7 @@ export class BattleEngine {
         g.clip();
       }
       const fadeOut = this.ending > 0 ? Math.max(0, this.ending / 0.4) : 1;
-      const big = (u: Bullet) => u.beam && (u.look === "feixe" || u.look === "corte");
+      const big = (u: Bullet) => (u.beam && (u.look === "feixe" || u.look === "corte")) || !!u.free;
       for (const u of this.bullets) {
         if (big(u)) continue;
         g.globalAlpha = Math.min(1, u.life / 0.12) * fadeOut;
@@ -2533,6 +2776,61 @@ export class BattleEngine {
     g.restore();
   }
 
+  /** Enfeites desenhados com formas simples: mão, boneco-torreta e globo de luz. */
+  drawDeco(u: Bullet) {
+    const g = this.ctx;
+    g.lineWidth = 2;
+    g.strokeStyle = "#000";
+    if (u.deco === "mao") {
+      g.rotate(u.ang);
+      g.fillStyle = "#ffffff";
+      for (let i = 0; i < 4; i++) {
+        g.beginPath();
+        g.ellipse(10, -7.5 + i * 5, 7, 2.6, 0, 0, Math.PI * 2);
+        g.fill();
+        g.stroke();
+      }
+      g.beginPath();
+      g.ellipse(-1, 0, 11, 10, 0, 0, Math.PI * 2);
+      g.fill();
+      g.stroke();
+      g.beginPath();
+      g.ellipse(1, 10, 6, 3, 0.6, 0, Math.PI * 2);
+      g.fill();
+      g.stroke();
+    } else if (u.deco === "torre") {
+      const a = Math.atan2(this.soul.y - u.y, this.soul.x - u.x);
+      g.fillStyle = "#d9d9d9";
+      g.fillRect(-6, -2, 12, 12);
+      g.strokeRect(-6, -2, 12, 12);
+      g.beginPath();
+      g.arc(0, -7, 6, 0, Math.PI * 2);
+      g.fill();
+      g.stroke();
+      g.fillStyle = "#ff3040";
+      g.beginPath();
+      g.arc(Math.cos(a) * 2.5, -7 + Math.sin(a) * 2.5, 1.8, 0, Math.PI * 2);
+      g.fill();
+    } else {
+      g.rotate(u.ang);
+      g.fillStyle = "#cfd6e6";
+      g.beginPath();
+      g.arc(0, 0, u.r, 0, Math.PI * 2);
+      g.fill();
+      g.stroke();
+      g.strokeStyle = "rgba(60,70,100,0.8)";
+      g.lineWidth = 1;
+      for (let i = -1; i <= 1; i++) {
+        g.beginPath();
+        g.moveTo(-u.r, (i * u.r) / 2);
+        g.lineTo(u.r, (i * u.r) / 2);
+        g.moveTo((i * u.r) / 2, -u.r);
+        g.lineTo((i * u.r) / 2, u.r);
+        g.stroke();
+      }
+    }
+  }
+
   bulletColor(u: Bullet) {
     return KIND_COLOR[u.kind] ?? u.cor ?? u.style.cor;
   }
@@ -2615,6 +2913,51 @@ export class BattleEngine {
     g.save();
     g.translate(u.x, u.y);
 
+    if (u.deco === "mao" || u.deco === "torre" || u.deco === "globo") {
+      this.drawDeco(u);
+      g.restore();
+      return;
+    }
+    if (u.boca) {
+      // bocarra: fundo roxo escuro, dentes em cima e dois olhos
+      const rw = u.rw!;
+      const rh = u.rh!;
+      g.fillStyle = "#2a0838";
+      g.strokeStyle = "#c33cff";
+      g.lineWidth = 2;
+      g.fillRect(-rw / 2, -rh / 2, rw, rh);
+      g.strokeRect(-rw / 2, -rh / 2, rw, rh);
+      g.fillStyle = "#ffffff";
+      for (let x = -rw / 2; x < rw / 2; x += 14) {
+        g.beginPath();
+        g.moveTo(x, -rh / 2);
+        g.lineTo(x + 7, -rh / 2 + 12);
+        g.lineTo(x + 14, -rh / 2);
+        g.fill();
+      }
+      g.fillStyle = "#ff3a6a";
+      for (const ex of [-rw * 0.22, rw * 0.22]) {
+        g.beginPath();
+        g.arc(ex, -rh / 2 + 26, 5, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.restore();
+      return;
+    }
+    if (u.bomba) {
+      g.fillStyle = "#1a1a1a";
+      g.strokeStyle = col;
+      g.lineWidth = 2;
+      g.beginPath();
+      g.arc(0, 0, u.r, 0, Math.PI * 2);
+      g.fill();
+      g.stroke();
+      g.fillStyle = col;
+      g.fillRect(-u.r * 0.6, -1.5, u.r * 1.2, 3);
+      g.fillRect(-1.5, -u.r * 0.6, 3, u.r * 1.2);
+      g.restore();
+      return;
+    }
     if (u.deco === "anel") {
       const k = Math.min(1, u.life / Math.max(0.01, u.maxLife));
       g.strokeStyle = "#ff3040";
@@ -2674,6 +3017,21 @@ export class BattleEngine {
           g.moveTo(-rw / 2, 0);
           g.lineTo(rw / 2, 0);
           g.stroke();
+        } else if (u.look === "raio") {
+          // marca de "!" no chão da caixa, piscando
+          const by = this.box.b - u.y - 12;
+          g.globalAlpha *= 0.55 + 0.45 * (Math.floor(u.life * 10) % 2);
+          g.strokeStyle = "#ff4040";
+          g.lineWidth = 2;
+          g.strokeRect(-9, by - 9, 18, 18);
+          g.fillStyle = "#ffe14a";
+          g.fillRect(-1.5, by - 6, 3, 8);
+          g.fillRect(-1.5, by + 4, 3, 3);
+        } else if (u.look === "golpe") {
+          // a caixa toda pisca na cor do golpe
+          g.fillStyle = col;
+          g.globalAlpha *= 0.22 + 0.2 * (Math.floor(u.life * 8) % 2);
+          g.fillRect(-rw / 2, -rh / 2, rw, rh);
         } else if (Math.floor(u.life * 12) % 2 === 0) {
           g.strokeStyle = u.look === "feixe" ? col : "rgba(255,255,255,0.8)";
           g.lineWidth = 2;
@@ -2721,6 +3079,34 @@ export class BattleEngine {
           g.moveTo(0, 0);
           g.lineTo(0, -hh);
           g.stroke();
+        } else if (u.look === "raio") {
+          // raio em zigue-zague que treme
+          g.strokeStyle = col;
+          g.shadowColor = col;
+          g.shadowBlur = 14;
+          g.lineWidth = Math.max(3, rw * 0.35);
+          g.beginPath();
+          const steps = 9;
+          for (let i = 0; i <= steps; i++) {
+            const y = -rh / 2 + (rh * i) / steps;
+            const x = i % 2 ? rw * 0.3 : -rw * 0.3;
+            if (i === 0) g.moveTo(x * Math.random(), y);
+            else g.lineTo(x * (0.6 + Math.random() * 0.4), y);
+          }
+          g.stroke();
+          g.shadowBlur = 0;
+          g.globalAlpha *= 0.25;
+          g.fillStyle = col;
+          g.fillRect(-rw / 2, -rh / 2, rw, rh);
+        } else if (u.look === "golpe") {
+          // três rasgos largos na cor do golpe
+          g.fillStyle = col;
+          g.globalAlpha *= 0.3;
+          g.fillRect(-rw / 2, -rh / 2, rw, rh);
+          g.globalAlpha /= 0.3;
+          g.shadowColor = col;
+          g.shadowBlur = 18;
+          for (const o of [-0.22, 0, 0.22]) g.fillRect(-rw / 2, o * rh - 7, rw, 14);
         } else if (u.look === "corte") {
           g.shadowColor = "#ff4040";
           g.shadowBlur = 10;

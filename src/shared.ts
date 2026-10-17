@@ -113,7 +113,18 @@ export type AttackType =
   | "visaodupla"
   | "arena"
   | "galaxia"
-  | "constelacao";
+  | "constelacao"
+  | "maos"
+  | "torretas"
+  | "teleguiado"
+  | "bumerangue"
+  | "bichinho"
+  | "bombas"
+  | "discoteca"
+  | "golpecor"
+  | "ondas"
+  | "raios"
+  | "roda";
 
 export interface AttackConfig {
   tipo: AttackType;
@@ -307,6 +318,17 @@ export const ATTACK_INFO: Record<AttackType, { nome: string; desc: string }> = {
   galaxia: { nome: "Galáxia de estrelas", desc: "Estrelas grandes saem do centro em braços de espiral girando." },
   constelacao: { nome: "Constelação", desc: "Uma grade de estrelas desce rolando pela tela." },
   deriva: { nome: "Caixa em movimento", desc: "A caixa desliza pela tela. Combine com outros ataques (modo simultâneo)." },
+  maos: { nome: "Mãos de fogo", desc: "Mãos varrem o alto da caixa (ou descem pelos lados) soltando bolas de fogo." },
+  torretas: { nome: "Torretas", desc: "Bonecos ficam presos em volta da caixa e atiram na alma, um de cada vez." },
+  teleguiado: { nome: "Mísseis teleguiados", desc: "Fileiras de mísseis que perseguem a alma por um tempo e depois seguem reto." },
+  bumerangue: { nome: "Bumerangue", desc: "Entra pelos lados, freia e volta por onde veio. Na alma roxa corre pelos fios." },
+  bichinho: { nome: "Bichinho faminto", desc: "Uma bocarra sobe e desce pelo fundo da caixa. Fique nos fios de cima." },
+  bombas: { nome: "Bombas e blocos", desc: "Blocos e bombas caem em colunas. Atirar numa bomba (alma amarela) solta uma explosão em cruz." },
+  discoteca: { nome: "Globo de luz", desc: "Um globo no alto da caixa balança feixes de luz azul e laranja." },
+  golpecor: { nome: "Golpe azul/laranja", desc: "A caixa inteira pisca numa cor e um golpe a atravessa: azul = fique parado, laranja = mexa-se." },
+  ondas: { nome: "Correntes em onda", desc: "Correntes de fogo sobem serpenteando e se cruzam em losangos. Fique dentro dos losangos." },
+  raios: { nome: "Raios com aviso", desc: "Marcas de \"!\" aparecem no chão e raios caem naquelas colunas, alternando." },
+  roda: { nome: "Roda de fogo", desc: "Um anel com uma abertura gira em volta da caixa e se fecha. Passe pela abertura." },
   pancada: { nome: "Pancada de gravidade", desc: "Arremessa a alma contra uma parede (vira alma azul naquela direção) e ossos sobem dali. Pule para escapar." },
 };
 
