@@ -85,3 +85,6 @@ button { font: inherit; cursor: pointer; }
 .log div { padding: 2px 0; border-bottom: 1px dashed #2c2c38; }
 .hidden { display: none !important; }
 .btn:disabled { opacity: 0.4; cursor: default; border-color: var(--line); }
+.phase select { min-width: 0; }
+.phase-pos { margin: 2px 0 0 2px; }
+.row.dodge > div { flex: 1; }

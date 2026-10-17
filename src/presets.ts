@@ -57,6 +57,7 @@ interface Def {
   caixa?: [number, number];
   poupavel?: boolean;
   karma?: boolean;
+  esquiva?: number;
   acoes?: string[];
   cenario?: Partial<Cenario>;
   turnos: TurnDef[];
@@ -77,6 +78,7 @@ function build(d: Def): PresetFile {
     descricao: "",
     acoes: d.acoes ?? ["Conferir", "Conversar", "Elogiar", "Provocar"],
     poupavel: !!d.poupavel,
+    esquiva: first.esquiva ?? d.esquiva ?? 0,
     frase: "",
   };
   c.alma.modo = first.modo ?? d.modo;
@@ -88,6 +90,7 @@ function build(d: Def): PresetFile {
   const turnos: SavedTurn[] = d.turnos.map((x) => ({
     modo: d.modo,
     intensidade: 1,
+    esquiva: d.esquiva ?? 0,
     ...x,
     cenario: { ...base, ...(x.cenario ?? {}) },
   }));
@@ -338,8 +341,8 @@ const UNDERTALE: Def[] = [
     ],
   },
   {
-    nome: "Sans", jogo: "Undertale", descricao: "Karma (KR), canhões em formação, pancadas, plataformas, grade e o ataque especial. Muito difícil.",
-    hp: 1, atk: 1, def: 1, modo: "vermelha", caixa: [240, 160], karma: true,
+    nome: "Sans", jogo: "Undertale", descricao: "Esquiva de tudo, tem karma (KR), canhões em formação, pancadas, plataformas, grade e o ataque especial. Na última fase ele cansa.",
+    hp: 1, atk: 1, def: 1, modo: "vermelha", caixa: [240, 160], karma: true, esquiva: 100,
     acoes: ["Conferir", "Contar piada", "Dormir"],
     turnos: [
       t("Boas-vindas", [a("ossos", 2.5, { velocidade: 1.4, densidade: 1.4 }), a("canhao", 2.5, { densidade: 1.3 }), a("pancada", 3)]),
@@ -349,6 +352,7 @@ const UNDERTALE: Def[] = [
       t("Grade de ossos", [a("grade", 6), a("canhao", 6, { densidade: 0.6 })], juntos),
       t("Túnel", [a("tunel", 7, { velocidade: 1.3 })]),
       t("Ataque especial", [a("cerco", 3), a("pancada", 3), a("cruz", 3), a("grade", 3), a("ponteiro", 4), a("corte", 3)], { intensidade: 1.3 }),
+      t("Cansado (sem esquiva)", [a("ossos", 6, { velocidade: 0.6, densidade: 0.5 })], { esquiva: 0, cenario: { escuro: 0.3 } }),
     ],
   },
 ];
@@ -533,7 +537,7 @@ const FANGAMES: Def[] = [
   {
     nome: "Last Breath", jogo: "Fangame",
     descricao: "Paródia em 3 fases cada vez mais brutais: canhões em formação, pancadas, plataformas, grade, ponteiro e caixa viva. Com KR.",
-    hp: 1, atk: 1, def: 1, modo: "vermelha", caixa: [240, 160], karma: true,
+    hp: 1, atk: 1, def: 1, modo: "vermelha", caixa: [240, 160], karma: true, esquiva: 100,
     acoes: ["Conferir", "Implorar", "Desafiar"],
     turnos: [
       t("Fase 1 — Aquecimento", [a("ossos", 3, { velocidade: 1.4, densidade: 1.3 }), a("canhao", 3, { densidade: 1.3 })]),
@@ -543,9 +547,9 @@ const FANGAMES: Def[] = [
       t("Fase 2 — Cerco", [a("cerco", 7)], { intensidade: 1.25, cenario: LB2 }),
       t("Fase 2 — Grade e cortes", [a("grade", 4), a("corte", 4)], { intensidade: 1.25, cenario: LB2 }),
       t("Fase 2 — Gravidade cruel", [a("pancada", 8, { densidade: 1.5 }), a("cruz", 8)], { ...juntos, intensidade: 1.25, cenario: { ...LB2, escuro: 0.35 } }),
-      t("Fase 3 — Ponteiro", [a("ponteiro", 6), a("ossos", 6, { densidade: 0.8 })], { ...juntos, intensidade: 1.45, cenario: LB3 }),
-      t("Fase 3 — Caixa viva", [a("deriva", 8), a("giratorio", 8, { densidade: 1.2 }), a("canhao", 8)], { ...juntos, intensidade: 1.45, cenario: LB3 }),
-      t("Fase 3 — Último suspiro", [a("cerco", 3), a("pancada", 3), a("grade", 3), a("ponteiro", 4), a("corte", 3), a("plataformas", 5)], { intensidade: 1.6, cenario: { ...LB3, escuro: 0.65, tremor: 0.25 } }),
+      t("Fase 3 — Ponteiro", [a("ponteiro", 6), a("ossos", 6, { densidade: 0.8 })], { ...juntos, intensidade: 1.45, cenario: LB3, esquiva: 70 }),
+      t("Fase 3 — Caixa viva", [a("deriva", 8), a("giratorio", 8, { densidade: 1.2 }), a("canhao", 8)], { ...juntos, intensidade: 1.45, cenario: LB3, esquiva: 45 }),
+      t("Fase 3 — Último suspiro", [a("cerco", 3), a("pancada", 3), a("grade", 3), a("ponteiro", 4), a("corte", 3), a("plataformas", 5)], { intensidade: 1.6, cenario: { ...LB3, escuro: 0.65, tremor: 0.25 }, esquiva: 20 }),
     ],
   },
 ];

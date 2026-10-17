@@ -18,9 +18,9 @@ Cada push na branch `main` publica o site de novo pelo GitHub Actions (~1 minuto
 
 | Aba | Para que serve |
 |---|---|
-| ⚔ **Batalha** | Vida do monstro, **fase do próximo turno** (⏭ avança), ▶ iniciar / próximo turno, 🧪 testar, 👁 assistir, encerrar, jogadores (HP, curar, repor itens), ações recebidas e resposta na caixa |
+| ⚔ **Batalha** | Vida e **esquiva** do monstro, **fase do próximo turno** (◀ ▶ entre as fases da luta, 🧹 limpa), ▶ iniciar / próximo turno, 🧪 testar, 👁 assistir, encerrar, jogadores (HP, curar, repor itens), ações recebidas e resposta na caixa |
 | ★ **Presets** | 44 lutas prontas (Undertale, Deltarune e os fangames Last Breath e Kaizo Knight), busca e filtros, Desfazer, salvar os seus, abrir/baixar arquivo `.json` |
-| ☻ **Monstro** | Nome, imagem (link ou token selecionado; GIF anima), tamanho, fala no balão, HP/ATK/DEF, opções do AGIR, se pode ser poupado, texto da caixa |
+| ☻ **Monstro** | Nome, imagem (link ou token selecionado; GIF anima), tamanho, fala no balão, HP/ATK/DEF, **chance de esquiva**, opções do AGIR, se pode ser poupado, texto da caixa |
 | ◐ **Cenário** | Cor de fundo, efeito animado (pulso, partículas, estrelas, brasas, grade, estática), cores da borda e da caixa, escuro nas bordas, tremor, imagem de fundo. Pode ser salvo em cada fase |
 | ♥ **Alma** | Mecânica (vermelha, azul, verde, roxa, amarela), aparência, regras (HP, invencibilidade, caixa, intensidade, karma), itens dos jogadores |
 | ✦ **Ataques** | Os ataques do turno (um depois do outro, todos juntos ou sorteado), cada um com duração, velocidade, quantidade, aparência, cor e regra de dano. Turnos salvos |
@@ -65,8 +65,8 @@ São aproximações; as marcadas "(aproximado)" são as menos fiéis. O **Kaizo 
 uma luta inteira em vídeo, ataque por ataque, e tem 16 fases terminando na arena sem caixa.
 
 - **Carregar** troca monstro, alma, ataques, caixa e cenário. Sua música, itens e regras dos jogadores continuam.
-- As **fases** entram na lista de turnos. Escolha a fase na aba Batalha antes de cada turno (⏭ passa para a próxima);
-  não precisa rolar todas.
+- As **fases** entram na lista de turnos, agrupadas e numeradas. Carregar outro preset troca as fases (seus turnos salvos ficam).
+  Escolha a fase na aba Batalha antes de cada turno (◀ ▶ andam entre as fases da luta, 🧹 limpa); não precisa rolar todas.
 - **Salvar atual** guarda a luta inteira, com os turnos salvos como fases. **Baixar atual** gera um `.batalha.json`
   que outra pessoa abre com **Abrir arquivo**.
 
@@ -75,6 +75,8 @@ uma luta inteira em vídeo, ataque por ataque, e tem 16 fases terminando na aren
 1. O mestre clica em **Iniciar batalha**; a tela abre para os jogadores marcados.
 2. Texto na caixa → fala do monstro no balão → ataques. Cada jogador controla a própria alma e vê as outras translúcidas.
 3. No fim, cada um escolhe **LUTAR** (barra de precisão; o dano sai da vida do monstro), **AGIR**, **ITEM** ou **POUPAR**.
+   Se o monstro tiver **chance de esquiva**, ele pode desviar do golpe: dá um passo para o lado, aparece "ESQUIVOU" e não toma dano.
+   A esquiva pode mudar por fase (o Sans esquiva sempre e só cansa na última fase).
 4. O mestre recebe a ação, responde na caixa e avança pela **barra do mestre** (dentro da batalha) ou pelo painel.
 
 ### Barra do mestre (na tela da batalha)

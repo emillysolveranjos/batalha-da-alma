@@ -6,10 +6,21 @@ import { BattleConfig, BattleState, SavedTurn } from "./shared";
 export function loadLibrary(): SavedTurn[] {
   try {
     const raw = JSON.parse(localStorage.getItem("batalha-turnos") || "[]");
-    return Array.isArray(raw) ? raw : [];
+    if (!Array.isArray(raw)) return [];
+    // listas antigas guardavam "Preset — Fase" no nome
+    return (raw as SavedTurn[]).map((t) => {
+      if (t.grupo || !t.nome.includes(" — ")) return t;
+      const i = t.nome.indexOf(" — ");
+      return { ...t, grupo: t.nome.slice(0, i), nome: t.nome.slice(i + 3) };
+    });
   } catch {
     return [];
   }
+}
+
+/** "Kaizo Knight — Estocada" ou só o nome, para turnos do próprio mestre. */
+export function phaseLabel(t: SavedTurn) {
+  return t.grupo ? `${t.grupo} — ${t.nome}` : t.nome;
 }
 
 export function saveLibrary(lib: SavedTurn[]) {
@@ -46,16 +57,21 @@ export function applyTurn(cfg: BattleConfig, t: SavedTurn) {
   if (t.modo) cfg.alma.modo = t.modo;
   if (t.intensidade) cfg.mecanica.intensidade = t.intensidade;
   if (t.cenario) cfg.cenario = structuredClone(t.cenario);
+  if (t.esquiva !== undefined) cfg.monstro.esquiva = t.esquiva;
 }
 
-/** Avança para a próxima fase da lista; devolve o nome dela ou null se a lista estiver vazia. */
-export function advancePhase(cfg: BattleConfig): string | null {
+/** Anda para a próxima (ou anterior) fase da mesma luta; devolve o nome ou null se não houver fases. */
+export function advancePhase(cfg: BattleConfig, dir = 1): string | null {
   const lib = loadLibrary();
   if (!lib.length) return null;
-  const i = (getPhaseIdx() + 1) % lib.length;
-  setPhaseIdx(i);
-  applyTurn(cfg, lib[i]);
-  return lib[i].nome;
+  const cur = getPhaseIdx();
+  const grupo = cur >= 0 && lib[cur] ? lib[cur].grupo : lib[0].grupo;
+  const idxs = lib.map((t, i) => (t.grupo === grupo ? i : -1)).filter((i) => i >= 0);
+  const pos = idxs.indexOf(cur);
+  const next = pos < 0 ? idxs[0] : idxs[(pos + dir + idxs.length) % idxs.length];
+  setPhaseIdx(next);
+  applyTurn(cfg, lib[next]);
+  return phaseLabel(lib[next]);
 }
 
 /** Estado de um novo turno; mantém número do turno e vida do monstro se a batalha já estava ativa. */

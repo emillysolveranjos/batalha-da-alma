@@ -28,6 +28,7 @@ export interface ActionMsg {
   precisao?: number;
   dano?: number;
   critico?: boolean;
+  esquivou?: boolean;
   cura?: number;
 }
 
@@ -35,7 +36,13 @@ export function describeAction(d: ActionMsg) {
   const parts = [d.escolha];
   if (d.opcao) parts.push(d.opcao);
   if (d.escolha === "LUTAR" && d.dano !== undefined)
-    parts.push(d.dano ? `${d.dano} de dano${d.critico ? " (CRÍTICO)" : ""}, precisão ${d.precisao}%` : "errou");
+    parts.push(
+      d.esquivou
+        ? `esquivou (precisão ${d.precisao}%)`
+        : d.dano
+          ? `${d.dano} de dano${d.critico ? " (CRÍTICO)" : ""}, precisão ${d.precisao}%`
+          : "errou",
+    );
   if (d.cura) parts.push(`+${d.cura} HP`);
   return `${d.nome}: ${parts.join(" — ")}${d.texto ? ` — “${d.texto}”` : ""}`;
 }
@@ -172,6 +179,7 @@ export interface BattleConfig {
     descricao: string; // aparece no "Conferir"
     acoes: string[]; // opções do AGIR
     poupavel: boolean; // nome fica amarelo no POUPAR
+    esquiva: number; // 0-100: chance de desviar de cada golpe do LUTAR
     frase: string; // texto da caixa no começo dos turnos seguintes
   };
   itens: Item[];
@@ -237,6 +245,8 @@ export interface SavedTurn {
   modo?: SoulMode; // a fase pode trocar a mecânica da alma
   intensidade?: number;
   cenario?: Cenario; // a fase pode trocar o cenário
+  esquiva?: number; // a fase pode mudar a chance de esquiva do monstro
+  grupo?: string; // nome do preset de onde a fase veio (vazio = turno salvo pelo mestre)
 }
 
 export interface BattleState {
@@ -366,6 +376,7 @@ export function defaultConfig(): BattleConfig {
       descricao: "",
       acoes: ["Conferir", "Conversar", "Provocar"],
       poupavel: false,
+      esquiva: 0,
       frase: "",
     },
     itens: [

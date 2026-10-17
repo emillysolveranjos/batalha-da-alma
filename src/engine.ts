@@ -24,7 +24,7 @@ type Phase = "intro" | "fala" | "ataque" | "menu" | "sub" | "lutar" | "lutarRes"
 
 /** Dados do menu LUTAR / AGIR / ITEM / POUPAR (vêm da configuração do mestre). */
 export interface MenuData {
-  monstro: { nome: string; atk: number; def: number; descricao: string; poupavel: boolean };
+  monstro: { nome: string; atk: number; def: number; descricao: string; poupavel: boolean; esquiva?: number };
   acoes: string[];
   itens: { nome: string; cura: number; restante: number }[];
   danoBase: number;
@@ -37,6 +37,7 @@ export interface ChoiceResult {
   precisao?: number; // 0-100
   dano?: number;
   critico?: boolean;
+  esquivou?: boolean;
   cura?: number;
   escrever?: boolean; // o jogador quer descrever a ação com as próprias palavras
 }
@@ -164,7 +165,7 @@ export interface EngineOptions {
   onHp?: (hp: number) => void;
   onDeath?: () => void;
   onChoice?: (choice: ChoiceResult) => void;
-  onFight?: (dano: number, critico: boolean, errou: boolean) => void; // animação no monstro
+  onFight?: (dano: number, critico: boolean, errou: boolean, esquivou: boolean) => void; // animação no monstro
   menu?: MenuData;
   waitText?: string; // linha mostrada depois da escolha (padrão: aguardando o mestre)
   onSoul?: (x: number, y: number, dead: boolean) => void;
@@ -1161,7 +1162,7 @@ export class BattleEngine {
   menuSel = 0;
   subOpts: SubOption[] = [];
   subSel = 0;
-  fight = { x: 0, acc: 0, dano: 0, crit: false, miss: false };
+  fight = { x: 0, acc: 0, dano: 0, crit: false, miss: false, dodged: false };
   ending = 0; // > 0: ataques acabando (projéteis somem aos poucos)
   shards: Shard[] = [];
   displayHp = 0;
@@ -2299,7 +2300,7 @@ export class BattleEngine {
   startFight() {
     this.setPhase("lutar");
     this.text = "";
-    this.fight = { x: this.box.l + 10, acc: 0, dano: 0, crit: false, miss: false };
+    this.fight = { x: this.box.l + 10, acc: 0, dano: 0, crit: false, miss: false, dodged: false };
   }
 
   fightStop(miss: boolean) {
@@ -2307,12 +2308,14 @@ export class BattleEngine {
     const m = this.menuData;
     const acc = miss ? 0 : Math.max(0, 1 - Math.abs(this.fight.x - b.cx) / (b.w / 2 - 10));
     const crit = !miss && acc > 0.96;
-    let dano = miss ? 0 : Math.round(m.danoBase * (0.25 + 0.75 * acc) * (crit ? 1.5 : 1)) - m.monstro.def;
-    dano = Math.max(miss ? 0 : 1, dano);
-    this.fight = { ...this.fight, acc, dano, crit, miss };
-    this.sfx.play(miss ? "texto" : "dano");
+    // o monstro pode desviar do golpe (chance definida pelo mestre)
+    const dodged = !miss && Math.random() * 100 < (m.monstro.esquiva ?? 0);
+    let dano = miss || dodged ? 0 : Math.round(m.danoBase * (0.25 + 0.75 * acc) * (crit ? 1.5 : 1)) - m.monstro.def;
+    dano = Math.max(miss || dodged ? 0 : 1, dano);
+    this.fight = { ...this.fight, acc, dano, crit: crit && !dodged, miss, dodged };
+    this.sfx.play(miss || dodged ? "texto" : "dano");
     this.setPhase("lutarRes");
-    this.opt.onFight?.(dano, crit, miss);
+    this.opt.onFight?.(dano, crit && !dodged, miss, dodged);
   }
 
   finishFight() {
@@ -2320,8 +2323,13 @@ export class BattleEngine {
     const nome = this.menuData.monstro.nome || "Monstro";
     const msg = f.miss
       ? `* Você errou o golpe!`
-      : `* Você atacou ${nome}${f.crit ? " - CRÍTICO" : ""}!\n* ${f.dano} de dano (precisão ${Math.round(f.acc * 100)}%).`;
-    this.finish({ escolha: "LUTAR", opcao: nome, precisao: Math.round(f.acc * 100), dano: f.dano, critico: f.crit }, msg);
+      : f.dodged
+        ? `* ${nome} desviou do seu golpe!`
+        : `* Você atacou ${nome}${f.crit ? " - CRÍTICO" : ""}!\n* ${f.dano} de dano (precisão ${Math.round(f.acc * 100)}%).`;
+    this.finish(
+      { escolha: "LUTAR", opcao: nome, precisao: Math.round(f.acc * 100), dano: f.dano, critico: f.crit, esquivou: f.dodged || undefined },
+      msg,
+    );
   }
 
   subRect(i: number) {

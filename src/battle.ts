@@ -128,7 +128,7 @@ function showSpeech(text: string) {
 }
 
 /** Golpe do LUTAR: corte, tremida, número de dano e barra de vida do monstro. */
-function fightFx(dano: number, crit: boolean, miss: boolean) {
+function fightFx(dano: number, crit: boolean, miss: boolean, dodged = false) {
   const img = monsterEl.querySelector<HTMLElement>("img, .placeholder");
   const slash = $("slash");
   const dmg = $("dmg");
@@ -143,13 +143,26 @@ function fightFx(dano: number, crit: boolean, miss: boolean) {
     void slash.offsetWidth;
     slash.classList.add("go");
   }
+  if (dodged) {
+    // o monstro dá um passo para o lado bem na hora do corte e volta
+    const side = Math.random() < 0.5 ? -1 : 1;
+    (img ?? monsterEl).animate(
+      [
+        { transform: "translateX(0)" },
+        { transform: `translateX(${side * 75}px)`, offset: 0.18 },
+        { transform: `translateX(${side * 75}px)`, offset: 0.7 },
+        { transform: "translateX(0)" },
+      ],
+      { duration: 1200, easing: "ease-out" },
+    );
+  }
   window.setTimeout(() => {
-    dmg.textContent = miss ? "ERROU" : String(dano);
-    dmg.style.color = miss ? "#c0c0c0" : crit ? "#ffff40" : "#ff3030";
+    dmg.textContent = miss ? "ERROU" : dodged ? "ESQUIVOU" : String(dano);
+    dmg.style.color = miss || dodged ? "#c0c0c0" : crit ? "#ffff40" : "#ff3030";
     dmg.classList.remove("go");
     void dmg.offsetWidth;
     dmg.classList.add("go");
-    if (miss) return;
+    if (miss || dodged) return;
     img?.classList.remove("hurt");
     void img?.offsetWidth;
     img?.classList.add("hurt");
@@ -181,7 +194,14 @@ function buildMenu(cfg: BattleConfig): MenuData {
       ? `* ${nome} bloqueia o caminho!`
       : (cfg.monstro.frase || FLAVOR[turnNumber % FLAVOR.length]).replace(/\{n\}/g, nome);
   return {
-    monstro: { nome, atk: cfg.monstro.atk, def: cfg.monstro.def, descricao: cfg.monstro.descricao, poupavel: cfg.monstro.poupavel },
+    monstro: {
+      nome,
+      atk: cfg.monstro.atk,
+      def: cfg.monstro.def,
+      descricao: cfg.monstro.descricao,
+      poupavel: cfg.monstro.poupavel,
+      esquiva: cfg.monstro.esquiva,
+    },
     acoes: cfg.monstro.acoes.filter((a) => a.trim()),
     itens: cfg.itens
       .filter((i) => i.nome.trim())
@@ -522,7 +542,7 @@ function runDemo() {
     Object.assign(cfg, structuredClone(preset.config));
     const fase = Math.max(0, Math.min(preset.turnos.length - 1, Number(params.get("fase") ?? 0)));
     if (preset.turnos[fase]) applyTurn(cfg, preset.turnos[fase]);
-    saveLibrary(preset.turnos.map((x) => ({ ...x, nome: `${preset.nome} — ${x.nome}` })));
+    saveLibrary(preset.turnos.map((x) => ({ ...x, grupo: preset.nome })));
     setPhaseIdx(fase);
   }
   if (params.has("hitbox")) cfg.mecanica.mostrarHitbox = true;

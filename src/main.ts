@@ -34,7 +34,16 @@ import { MusicPlayer, Sfx } from "./audio";
 import { CH_FILE_PROGRESS, CH_FILE_PUSH, MAX_FILE_MB, ProgressMsg, fileUrl, hashFile, putFile } from "./files";
 import { describeSource, fileValue, parseSource } from "./media";
 import { BUILTIN_PRESETS, PRESET_FORMAT, PresetFile, parsePreset } from "./presets";
-import { applyTurn as applyTurnTo, getPhaseIdx, loadLibrary, newBattleState, saveLibrary, setPhaseIdx } from "./gm";
+import {
+  advancePhase,
+  applyTurn as applyTurnTo,
+  getPhaseIdx,
+  loadLibrary,
+  newBattleState,
+  phaseLabel,
+  saveLibrary,
+  setPhaseIdx,
+} from "./gm";
 
 const app = document.getElementById("app")!;
 const BATTLE_URL = `${import.meta.env.BASE_URL}battle.html`;
@@ -115,7 +124,11 @@ function num(path: string, label: string, min: number, max: number, step = 1) {
   return `<div><label>${label}</label><input type="number" data-path="${path}" data-num min="${min}" max="${max}" step="${step}" value="${getPath(path)}"></div>`;
 }
 const fmt = (path: string, v: number) =>
-  path.includes(".vol") || path.startsWith("cenario.") ? `${Math.round(v * 100)}%` : `${v.toFixed(1)}×`;
+  path === "monstro.esquiva"
+    ? `${Math.round(v)}%`
+    : path.includes(".vol") || path.startsWith("cenario.")
+      ? `${Math.round(v * 100)}%`
+      : `${v.toFixed(1)}×`;
 function range(path: string, label: string, min: number, max: number, step: number) {
   const v = Number(getPath(path));
   return `<div><label>${label}: <b data-out="${path}">${fmt(path, v)}</b></label><input type="range" data-path="${path}" data-num min="${min}" max="${max}" step="${step}" value="${v}"></div>`;
@@ -208,6 +221,7 @@ function viewMonstro() {
         ${num("monstro.atk", "ATK", 0, 999)}
         ${num("monstro.def", "DEF", 0, 999)}
       </div>
+      ${range("monstro.esquiva", "Chance de esquivar do LUTAR", 0, 100, 5)}
       ${text("monstro.descricao", "Descrição do “Conferir”", "Parece cansado de lutar.")}
       <label>Opções do AGIR (uma por linha)</label>
       <textarea data-lines="monstro.acoes">${esc(cfg.monstro.acoes.join("\n"))}</textarea>
@@ -371,7 +385,7 @@ function viewAtaques() {
         <button class="btn shrink" data-act="save-turn">Salvar atual</button></div>
       ${lib
         .map(
-          (t, i) => `<div class="player"><span class="name" title="${esc(t.nome)}">${esc(t.nome)}</span>
+          (t, i) => `<div class="player"><span class="name" title="${esc(phaseLabel(t))}">${esc(phaseLabel(t))}</span>
           <span class="muted">${t.ataques.length}×</span>
           <button class="btn small" data-act="load-turn" data-i="${i}">Usar</button>
           <button class="btn small" data-act="del-turn" data-i="${i}">✕</button></div>`,
@@ -486,6 +500,7 @@ function viewBatalha() {
             ${active ? `<button class="btn small" data-act="mhp" data-d="-10">−10</button><button class="btn small" data-act="mhp" data-d="10">+10</button><button class="btn small" data-act="mhp" data-d="max" title="Restaurar">♥</button>` : ""}</div>`
           : ""
       }
+      <div class="row dodge">${range("monstro.esquiva", "Esquiva no próximo turno", 0, 100, 5)}</div>
       ${phaseSelect()}
       <button class="btn big go" data-act="start">▶ ${active ? "Próximo turno" : "Iniciar batalha"}</button>
       <div class="row">
@@ -515,14 +530,36 @@ function viewBatalha() {
     )}`;
 }
 
+/** Lista de fases agrupada por luta, numerada, com ◀ ▶ e limpar. */
 function phaseSelect() {
   phaseIdx = getPhaseIdx();
   const lib = loadLibrary();
   if (!lib.length) return "";
-  return `<div class="row phase"><select data-phase title="Fase do próximo turno">
-      <option value="-1" ${phaseIdx < 0 ? "selected" : ""}>Fase: como está nas abas</option>
-      ${lib.map((t, i) => `<option value="${i}" ${i === phaseIdx ? "selected" : ""}>${esc(t.nome)}</option>`).join("")}
-    </select><button class="btn shrink" data-act="next-phase" title="Próxima fase">⏭</button></div>`;
+  const groups = new Map<string, { t: SavedTurn; i: number }[]>();
+  lib.forEach((t, i) => {
+    const g = t.grupo || "Meus turnos";
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g)!.push({ t, i });
+  });
+  const cur = lib[phaseIdx];
+  const curGroup = cur ? groups.get(cur.grupo || "Meus turnos") ?? [] : [];
+  const pos = curGroup.findIndex((x) => x.i === phaseIdx);
+  const opts = [...groups.entries()]
+    .map(
+      ([g, items]) => `<optgroup label="${esc(g)}">${items
+        .map(({ t, i }, n) => `<option value="${i}" ${i === phaseIdx ? "selected" : ""}>${n + 1}. ${esc(t.nome)}</option>`)
+        .join("")}</optgroup>`,
+    )
+    .join("");
+  return `<div class="row phase">
+      <button class="btn shrink" data-act="prev-phase" title="Fase anterior">◀</button>
+      <select data-phase title="Fase do próximo turno">
+        <option value="-1" ${phaseIdx < 0 ? "selected" : ""}>Fase: como está nas abas</option>${opts}
+      </select>
+      <button class="btn shrink" data-act="next-phase" title="Próxima fase">▶</button>
+      <button class="btn shrink" data-act="clear-phases" title="Limpar fases de presets">🧹</button>
+    </div>
+    ${pos >= 0 ? `<div class="muted phase-pos">${esc(cur!.grupo || "Meus turnos")} · fase ${pos + 1} de ${curGroup.length}</div>` : ""}`;
 }
 
 function render() {
@@ -734,7 +771,7 @@ app.addEventListener("click", async (e) => {
         applyTurn(t);
         phaseIdx = i;
         setPhaseIdx(phaseIdx);
-        if (inOBR) OBR.notification.show(`Turno "${t.nome}" carregado.`, "SUCCESS");
+        if (inOBR) OBR.notification.show(`Turno "${phaseLabel(t)}" carregado.`, "SUCCESS");
       }
       break;
     }
@@ -763,12 +800,18 @@ app.addEventListener("click", async (e) => {
       phaseIdx = -1;
       setPhaseIdx(-1);
       break;
-    case "next-phase": {
-      const lib = loadLibrary();
-      if (!lib.length) return;
-      phaseIdx = (phaseIdx + 1) % lib.length;
-      setPhaseIdx(phaseIdx);
-      applyTurn(lib[phaseIdx]);
+    case "next-phase":
+    case "prev-phase":
+      if (!advancePhase(cfg, el.dataset.act === "next-phase" ? 1 : -1)) return;
+      phaseIdx = getPhaseIdx();
+      break;
+    case "clear-phases": {
+      // tira as fases de presets e mantém os turnos que o mestre salvou
+      const mine = loadLibrary().filter((t) => !t.grupo);
+      saveLibrary(mine);
+      phaseIdx = -1;
+      setPhaseIdx(-1);
+      notify("Fases de presets removidas da lista.", "SUCCESS");
       break;
     }
     case "load-preset": {
@@ -1016,9 +1059,9 @@ function loadPreset(p: PresetFile, full: boolean) {
     };
   }
   // as fases do preset entram no topo da lista de turnos salvos
-  const prefix = `${p.nome} — `;
-  const lib = loadLibrary().filter((t) => !t.nome.startsWith(prefix));
-  saveLibrary([...p.turnos.map((t) => ({ ...structuredClone(t), nome: prefix + t.nome })), ...lib]);
+  // as fases do preset substituem as de outros presets; os turnos do mestre ficam
+  const mine = loadLibrary().filter((t) => !t.grupo);
+  saveLibrary([...p.turnos.map((t) => ({ ...structuredClone(t), grupo: p.nome })), ...mine]);
   phaseIdx = p.turnos.length ? 0 : -1;
   setPhaseIdx(phaseIdx);
   presetStatus = `"${p.nome}" carregado${p.turnos.length ? ` com ${p.turnos.length} fase(s) — escolha a fase na aba Batalha` : ""}.`;
@@ -1032,7 +1075,7 @@ function currentAsPreset(nome: string): PresetFile {
     nome,
     descricao: `${cfg.monstro.nome} • ${cfg.ataques.length} ataque(s)`,
     config: structuredClone(cfg),
-    turnos: loadLibrary(),
+    turnos: loadLibrary().map((t) => ({ ...t, grupo: undefined })),
   };
 }
 
