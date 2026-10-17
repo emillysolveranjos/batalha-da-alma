@@ -11,13 +11,39 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.4 system-ui, sans-serif; }
-#app { padding: 10px 12px 16px; }
+#app { padding: 8px 10px 16px; }
 h1 { font: 30px VT323, monospace; margin: 0 0 6px; color: var(--gold); letter-spacing: 1px; display: flex; align-items: center; gap: 8px; }
 h1 .heart { color: #ff2a2a; }
 h2 { font: 22px VT323, monospace; margin: 14px 0 6px; color: var(--accent); }
-.tabs { display: flex; gap: 4px; margin-bottom: 10px; }
-.tabs button { flex: 1; font: 18px VT323, monospace; background: transparent; color: var(--muted); border: 2px solid var(--line); border-radius: 4px; padding: 3px 0; cursor: pointer; }
-.tabs button.on { color: var(--gold); border-color: var(--gold); }
+.tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-bottom: 10px; position: sticky; top: 0; background: var(--bg); padding: 4px 0; z-index: 2; }
+.tabs button { font: 18px VT323, monospace; background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 3px 0; cursor: pointer; white-space: nowrap; }
+.tabs button:hover { color: var(--text); }
+.tabs button.on { color: var(--gold); border-color: var(--gold); background: #2a2410; }
+.filters { display: flex; gap: 4px; margin-bottom: 6px; }
+.filters button { flex: 1; font: 17px VT323, monospace; background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 0; cursor: pointer; }
+.filters button.on { color: var(--gold); border-color: var(--gold); }
+details.sec { border: 1px solid var(--line); border-radius: 6px; padding: 2px 10px 8px; margin: 8px 0; background: var(--card); }
+details.sec:not([open]) { padding-bottom: 2px; }
+details.sec > summary { cursor: pointer; font: 20px VT323, monospace; color: var(--accent); list-style: none; padding: 4px 0; }
+details.sec > summary::-webkit-details-marker { display: none; }
+details.sec > summary::before { content: "▸ "; color: var(--muted); }
+details.sec[open] > summary::before { content: "▾ "; }
+.hero { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.hero-title { font: 26px VT323, monospace; color: var(--gold); display: flex; justify-content: space-between; align-items: baseline; }
+.hero-title .muted { font: 13px system-ui, sans-serif; }
+.hpbar.wide { flex: 1; width: auto; height: 10px; }
+.phase { margin-top: 6px; }
+.presets { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.preset { display: flex; gap: 8px; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+.preset:hover { border-color: #55556a; }
+.preset-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.preset-main b { font: 21px VT323, monospace; }
+.preset-main .muted { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.preset-actions { display: flex; flex-direction: column; gap: 4px; }
+.tag { font-size: 11px; color: var(--gold); opacity: 0.8; margin-top: 2px; }
+.card .dur { width: 54px; flex: 0 0 auto; padding: 4px; text-align: center; }
+.card-head .dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+.card.open { border-color: #55556a; }
 label { display: block; margin: 8px 0 3px; color: var(--muted); font-size: 12px; }
 input[type="text"], input[type="number"], input[type="url"], select, textarea {
   width: 100%; background: #111117; color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 5px 7px; font: inherit;
@@ -44,7 +70,7 @@ button { font: inherit; cursor: pointer; }
 .card-head .num { font: 20px VT323, monospace; color: var(--gold); width: 20px; }
 .card-head select { flex: 1; }
 .souls { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.soul-opt { border: 2px solid var(--line); border-radius: 6px; padding: 6px 8px; cursor: pointer; background: var(--card); }
+.soul-opt { border: 2px solid var(--line); border-radius: 6px; padding: 4px 8px; cursor: pointer; background: var(--card); }
 .soul-opt.on { border-color: var(--gold); }
 .soul-opt b { display: block; font: 20px VT323, monospace; }
 .preview { max-height: 70px; max-width: 100%; display: block; margin-top: 6px; image-rendering: pixelated; border-radius: 4px; }

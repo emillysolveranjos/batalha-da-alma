@@ -71,6 +71,17 @@ export class Sfx {
     }
   }
 
+  /** Sons internos dos ataques (sempre sintetizados). */
+  fx(kind: "carga" | "disparo" | "impacto") {
+    if (!this.on) return;
+    if (kind === "carga") this.tone(180, 0.35, "sawtooth", 0.035, 500);
+    if (kind === "disparo") {
+      this.tone(90, 0.45, "sawtooth", 0.09, -40);
+      this.tone(1400, 0.12, "square", 0.03, -900);
+    }
+    if (kind === "impacto") this.tone(70, 0.2, "square", 0.08, -30);
+  }
+
   private synth(name: SfxName) {
     switch (name) {
       case "dano": return this.tone(220, 0.25, "square", 0.1, -150);

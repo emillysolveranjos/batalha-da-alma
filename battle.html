@@ -26,7 +26,8 @@
       #top { position: absolute; top: 8px; right: 8px; display: flex; gap: 6px; z-index: 6; }
       #embed { position: fixed; right: 8px; bottom: 8px; z-index: 7; display: none; border: 2px solid #fff; background: #000; }
       #status { position: absolute; left: 10px; bottom: 10px; z-index: 6; display: none; font-size: 20px; color: #ffd84a; background: rgba(0,0,0,0.7); padding: 2px 8px; }
-      #help { position: absolute; top: 8px; left: 10px; font-size: 18px; opacity: 0.6; z-index: 6; }
+      #help { position: absolute; top: 8px; left: 10px; right: 90px; font-size: 18px; opacity: 0.6; z-index: 6; transition: opacity 1.5s; pointer-events: none; }
+      #help.fade { opacity: 0; }
       #gmbar { position: absolute; top: 30px; left: 10px; right: 90px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; z-index: 6; }
       #gmbar input { font: 20px VT323, monospace; background: #000; color: #fff; border: 2px solid #ffd84a; padding: 2px 8px; width: min(320px, 40vw); }
       #gmbar button { font: 20px VT323, monospace; background: #000; color: #ffd84a; border: 2px solid #ffd84a; padding: 1px 10px; cursor: pointer; }

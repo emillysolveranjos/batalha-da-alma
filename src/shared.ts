@@ -40,7 +40,7 @@ export function describeAction(d: ActionMsg) {
   return `${d.nome}: ${parts.join(" — ")}${d.texto ? ` — “${d.texto}”` : ""}`;
 }
 
-export type SoulMode = "vermelha" | "azul" | "verde" | "roxa";
+export type SoulMode = "vermelha" | "azul" | "verde" | "roxa" | "amarela";
 export type BulletKind = "branco" | "azul" | "laranja" | "verde";
 export type BulletShape =
   | "circulo"
@@ -69,7 +69,18 @@ export type AttackType =
   | "estacas"
   | "varredura"
   | "fios"
-  | "pancada";
+  | "pancada"
+  | "cerco"
+  | "cruz"
+  | "ponteiro"
+  | "cortina"
+  | "grade"
+  | "plataformas"
+  | "giratorio"
+  | "corte"
+  | "deriva"
+  | "lancas"
+  | "vortice";
 
 export interface AttackConfig {
   tipo: AttackType;
@@ -86,6 +97,40 @@ export interface AttackConfig {
   fala: string; // fala opcional do monstro durante este ataque
   caixaL: number; // largura da caixa (0 = padrão)
   caixaA: number; // altura da caixa (0 = padrão)
+}
+
+export type SceneEffect = "nenhum" | "pulso" | "particulas" | "estrelas" | "chamas" | "grade" | "estatica";
+
+export interface Cenario {
+  fundoCor: string;
+  efeito: SceneEffect;
+  corEfeito: string;
+  bordaCor: string;
+  caixaCor: string;
+  escuro: number; // 0..0.9 vinheta escura nas bordas
+  tremor: number; // 0..1 tela tremendo o tempo todo
+}
+
+export const EFEITO_INFO: Record<SceneEffect, string> = {
+  nenhum: "Nenhum",
+  pulso: "Pulso de luz",
+  particulas: "Partículas subindo",
+  estrelas: "Estrelas",
+  chamas: "Brasas",
+  grade: "Grade em movimento",
+  estatica: "Estática de TV",
+};
+
+export function defaultCenario(): Cenario {
+  return {
+    fundoCor: "#000000",
+    efeito: "nenhum",
+    corEfeito: "#3b6bff",
+    bordaCor: "#ffffff",
+    caixaCor: "#000000",
+    escuro: 0,
+    tremor: 0,
+  };
 }
 
 export interface BattleConfig {
@@ -121,9 +166,12 @@ export interface BattleConfig {
     mostrarHitbox: boolean;
     sons: boolean;
     intensidade: number; // multiplica velocidade e densidade de todos os ataques
+    efeitos: boolean; // clarões, tremidas e aberração cromática
+    karma: boolean; // KR: cada acerto envenena e o HP vai drenando
     danoAtaque: number; // dano base do LUTAR (acerto perfeito)
   };
   audio: AudioConfig;
+  cenario: Cenario;
   ataques: AttackConfig[];
 }
 
@@ -162,6 +210,7 @@ export interface SavedTurn {
   ataques: AttackConfig[];
   modo?: SoulMode; // a fase pode trocar a mecânica da alma
   intensidade?: number;
+  cenario?: Cenario; // a fase pode trocar o cenário
 }
 
 export interface BattleState {
@@ -191,6 +240,17 @@ export const ATTACK_INFO: Record<AttackType, { nome: string; desc: string }> = {
   estacas: { nome: "Estacas", desc: "O chão (ou o teto) pisca e uma estaca sobe naquele ponto." },
   varredura: { nome: "Varredura", desc: "Barras da altura da caixa atravessam tudo. Use azul ou laranja; branco alterna os dois." },
   fios: { nome: "Fios", desc: "Projéteis correm pelas 3 linhas horizontais. Feito para a alma roxa." },
+  cerco: { nome: "Cerco de canhões", desc: "Um anel de canhões cerca a caixa e dispara um depois do outro na alma." },
+  cruz: { nome: "Cruz de canhões", desc: "Canhões cruzam feixes sobre a alma (reto e depois na diagonal)." },
+  ponteiro: { nome: "Ponteiro", desc: "Feixe preso no centro girando como um relógio: corra à frente dele." },
+  cortina: { nome: "Cortina de ossos", desc: "Bloco de ossos azuis (ou laranja) atravessando a caixa junto." },
+  grade: { nome: "Grade de ossos", desc: "Colunas de ossos surgem no lugar, com um vão em cada uma." },
+  plataformas: { nome: "Plataformas", desc: "Vira alma azul: chão de espinhos e plataformas andando para se apoiar." },
+  giratorio: { nome: "Ossos giratórios", desc: "Ossos girando no ar arremessados na direção da alma." },
+  corte: { nome: "Cortes", desc: "Linha vermelha de aviso e um corte rápido atravessa a tela." },
+  lancas: { nome: "Lanças traiçoeiras", desc: "Lanças dos 4 lados; as amarelas dão a volta e chegam pelo lado oposto. Feito para a alma verde." },
+  vortice: { nome: "Vórtice", desc: "Puxa a alma para o centro enquanto projéteis giram em espiral para dentro." },
+  deriva: { nome: "Caixa em movimento", desc: "A caixa desliza pela tela. Combine com outros ataques (modo simultâneo)." },
   pancada: { nome: "Pancada de gravidade", desc: "Arremessa a alma contra uma parede (vira alma azul naquela direção) e ossos sobem dali. Pule para escapar." },
 };
 
@@ -199,6 +259,7 @@ export const SOUL_INFO: Record<SoulMode, { nome: string; cor: string; desc: stri
   azul: { nome: "Azul (gravidade)", cor: "#1a5cff", desc: "Cai com gravidade. Cima/W/Z pula." },
   verde: { nome: "Verde (escudo)", cor: "#16c60c", desc: "Fica parada no centro; as setas giram o escudo." },
   roxa: { nome: "Roxa (fios)", cor: "#c33cff", desc: "Presa em 3 fios: cima/baixo troca de fio." },
+  amarela: { nome: "Amarela (tiro)", cor: "#ffe14a", desc: "Move livre e atira para cima com Z; os tiros destroem projéteis redondos." },
 };
 
 export const KIND_COLOR: Record<BulletKind, string | null> = {
@@ -218,7 +279,7 @@ export function defaultAttack(tipo: AttackType = "chuva"): AttackConfig {
     dano: 2,
     tipoDano: "branco",
     forma:
-      tipo === "ossos" || tipo === "tunel" || tipo === "varredura"
+      tipo === "ossos" || tipo === "tunel" || tipo === "varredura" || tipo === "cortina" || tipo === "giratorio"
         ? "osso"
         : tipo === "flechas" || tipo === "estacas"
           ? "seta"
@@ -263,6 +324,8 @@ export function defaultConfig(): BattleConfig {
       mostrarHitbox: false,
       sons: true,
       intensidade: 1,
+      efeitos: true,
+      karma: false,
       danoAtaque: 12,
     },
     audio: {
@@ -271,6 +334,7 @@ export function defaultConfig(): BattleConfig {
       volSons: 0.8,
       sons: { dano: "", escudo: "", texto: "", selecionar: "", cura: "", morte: "" },
     },
+    cenario: defaultCenario(),
     ataques: [defaultAttack("chuva"), defaultAttack("lateral")],
   };
 }
@@ -289,6 +353,7 @@ export function normalizeConfig(raw: unknown): BattleConfig {
     alma: { ...d.alma, ...(c.alma ?? {}) },
     mecanica: { ...d.mecanica, ...(c.mecanica ?? {}) },
     audio: { ...d.audio, ...(c.audio ?? {}), sons: { ...d.audio.sons, ...(c.audio?.sons ?? {}) } },
+    cenario: { ...d.cenario, ...(c.cenario ?? {}) },
     ataques: Array.isArray(c.ataques)
       ? c.ataques.map((a) => ({ ...defaultAttack(a?.tipo), ...a }))
       : d.ataques,

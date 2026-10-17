@@ -1,10 +1,10 @@
 # Batalha da Alma — extensão para o Owlbear Rodeo
 
 Transforma a mesa numa batalha de "desviar de projéteis" no estilo dos RPGs de alma/coração.
-Os **ataques são predefinidos** (movimento e hitbox), e o **mestre escolhe** a aparência, o personagem do meio,
-a mecânica da alma e a combinação de ataques de cada turno.
+Os **ataques são predefinidos** (movimento e hitbox); o **mestre escolhe** o monstro, o cenário,
+a mecânica da alma, os ataques de cada turno e os sons.
 
-## Instalar no Owlbear (versão publicada)
+## Instalar
 
 No Owlbear Rodeo: **Perfil → Extensões → Adicionar extensão** e cole:
 
@@ -12,136 +12,107 @@ No Owlbear Rodeo: **Perfil → Extensões → Adicionar extensão** e cole:
 https://emillysolveranjos.github.io/batalha-da-alma/manifest.json
 ```
 
-Cada push na branch `main` publica o site de novo pelo GitHub Actions (leva ~1 minuto).
+Cada push na branch `main` publica o site de novo pelo GitHub Actions (~1 minuto).
 
-## Rodar no seu computador
+## O painel do mestre
+
+| Aba | Para que serve |
+|---|---|
+| ⚔ **Batalha** | Vida do monstro, **fase do próximo turno** (⏭ avança), ▶ iniciar / próximo turno, 🧪 testar, 👁 assistir, encerrar, jogadores (HP, curar, repor itens), ações recebidas e resposta na caixa |
+| ★ **Presets** | 43 lutas prontas (Undertale, Deltarune e o fangame Last Breath), busca e filtros, Desfazer, salvar os seus, abrir/baixar arquivo `.json` |
+| ☻ **Monstro** | Nome, imagem (link ou token selecionado; GIF anima), tamanho, fala no balão, HP/ATK/DEF, opções do AGIR, se pode ser poupado, texto da caixa |
+| ◐ **Cenário** | Cor de fundo, efeito animado (pulso, partículas, estrelas, brasas, grade, estática), cores da borda e da caixa, escuro nas bordas, tremor, imagem de fundo. Pode ser salvo em cada fase |
+| ♥ **Alma** | Mecânica (vermelha, azul, verde, roxa, amarela), aparência, regras (HP, invencibilidade, caixa, intensidade, karma), itens dos jogadores |
+| ✦ **Ataques** | Os ataques do turno (um depois do outro, todos juntos ou sorteado), cada um com duração, velocidade, quantidade, aparência, cor e regra de dano. Turnos salvos |
+| ♪ **Sons** | Música e efeitos: padrão (original), arquivo do computador, YouTube, SoundCloud, Drive, Dropbox ou link de mp3 |
+
+## Almas
+
+- **Vermelha:** move livre (Shift = devagar).
+- **Azul:** gravidade e pulo; a pancada muda a gravidade para qualquer parede.
+- **Verde:** parada no centro; as setas viram o escudo.
+- **Roxa:** presa em 3 fios.
+- **Amarela:** move livre e atira para cima com Z; os tiros destroem projéteis redondos.
+- **Karma (KR):** opção de regra. Cada toque tira 1 e envenena; o HP vai drenando (nunca mata sozinho).
+
+## Ataques
+
+**Básicos:** chuva, rajada lateral, ossos, anel, espiral, mirado, laser, ricochete, túnel, explosão, flechas, arco, estacas, varredura, fios.
+
+**Coreografados:**
+- **Canhão / Cerco / Cruz:** canhões visíveis entram na tela, miram, carregam e disparam feixes (em anel, em cruz ou um a um).
+- **Ponteiro:** feixe preso no centro girando como relógio.
+- **Cortina:** bloco de ossos azuis ou laranja atravessando junto.
+- **Grade:** colunas de ossos surgem no lugar, cada uma com um vão.
+- **Plataformas:** vira alma azul, com chão de espinhos e plataformas andando.
+- **Ossos giratórios**, **Cortes** (linha vermelha de aviso + corte rápido), **Caixa em movimento**.
+- **Pancada de gravidade:** joga a alma numa parede e ossos sobem dali.
+- **Lanças traiçoeiras:** as amarelas dão a volta e chegam pelo lado oposto.
+- **Vórtice:** puxa a alma para o centro enquanto projéteis giram para dentro.
+
+Nas fases intensas e nos disparos há clarão, tremida e aberração cromática (desligável no Cenário).
+
+## Presets
+
+Paródias **só de moveset** de 43 lutas: os ataques, o modo da alma, o ritmo e o clima do cenário de cada fase.
+Não há arte, som, código ou fala dos jogos; a aparência do monstro e as falas ficam por conta do mestre.
+São aproximações; as marcadas "(aproximado)" são as menos fiéis.
+
+- **Carregar** troca monstro, alma, ataques, caixa e cenário. Sua música, itens e regras dos jogadores continuam.
+- As **fases** entram na lista de turnos. Escolha a fase na aba Batalha antes de cada turno (⏭ passa para a próxima);
+  não precisa rolar todas.
+- **Salvar atual** guarda a luta inteira, com os turnos salvos como fases. **Baixar atual** gera um `.batalha.json`
+  que outra pessoa abre com **Abrir arquivo**.
+
+## Fluxo de um turno
+
+1. O mestre clica em **Iniciar batalha**; a tela abre para os jogadores marcados.
+2. Texto na caixa → fala do monstro no balão → ataques. Cada jogador controla a própria alma e vê as outras translúcidas.
+3. No fim, cada um escolhe **LUTAR** (barra de precisão; o dano sai da vida do monstro), **AGIR**, **ITEM** ou **POUPAR**.
+4. O mestre recebe a ação, responde na caixa e avança pela **barra do mestre** (dentro da batalha) ou pelo painel.
+
+### Barra do mestre (na tela da batalha)
+
+Aparece ao 👁 Assistir e no 🧪 Testar: **responder na caixa**, **▶ próximo turno**, **⏭ próxima fase**, **■ encerrar**.
+No teste sozinho, depois de escolher a ação, **Z** começa o próximo turno.
+
+## Controles do jogador
+
+- Setas/WASD movem; Shift ou X = devagar; Z/Espaço = pular (azul) ou atirar (amarela) e confirmar.
+- Mouse/dedo: arraste a alma.
+- **Controle:** analógico ou direcional move; **A** pula/confirma/atira; **B** devagar. Aperte um botão para o navegador detectar.
+
+## Sons e música
+
+O padrão é uma **música original sintetizada** e efeitos sintetizados. Para trocar:
+
+- **📤 Arquivo:** mp3 do seu computador (até 10 MB). Vai aos jogadores pelo Owlbear, em pedaços (~1 MB a cada 10 s); cada um guarda.
+- **🔗 YouTube / SoundCloud:** o player oficial aparece no canto da batalha. Vídeos com incorporação bloqueada não tocam.
+- **🔗 Google Drive / Dropbox:** link de compartilhamento aberto a qualquer pessoa.
+- Spotify não funciona (só libera prévias de 30 s).
+
+Use apenas áudios que você tem direito de usar.
+
+## Desenvolvimento
 
 ```bash
 npm install
 npm run dev
 ```
 
-No Owlbear Rodeo: **Perfil → Extensões → Adicionar extensão** e cole:
+Extensão local: `http://localhost:5173/manifest.json`. Para testar sem o Owlbear:
 
-```
-http://localhost:5173/manifest.json
-```
+- `http://localhost:5173/battle.html?ataque=cerco&modo=azul&hitbox` — um ataque, um modo de alma, hitboxes
+- `http://localhost:5173/battle.html?preset=sans&fase=3` — uma fase de um preset pronto
 
-> Enquanto estiver usando `localhost`, só funciona no computador que roda o `npm run dev`.
-> Para os jogadores usarem também, publique a extensão (veja abaixo).
+### Arquivos
 
-## Publicar
-
-O workflow `.github/workflows/deploy.yml` compila e publica no GitHub Pages automaticamente.
-Para hospedar em outro lugar, rode `npm run build` e envie a pasta `dist/`. Se o site ficar num subcaminho,
-defina `BASE_PATH=/subcaminho/` antes do build.
-
-## Como usar (mestre)
-
-Clique no ícone ♥ na barra de extensões.
-
-| Aba | O que dá para escolher |
-|---|---|
-| **Presets** | 43 lutas prontas (Undertale, Deltarune e o fangame Last Breath), só moveset, com várias fases cada. Busca, filtro por jogo, "Meus presets", abrir/baixar arquivo `.json` e Desfazer |
-| **Monstro** | Nome, aparência (URL ou **token selecionado** no mapa; GIFs animam), tamanho, fala no balão, texto da caixa, fundo, **HP / ATK / DEF**, descrição do "Conferir", **opções do AGIR**, se pode ser poupado |
-| **Alma** | Mecânica: **Vermelha** (livre), **Azul** (gravidade/pulo), **Verde** (parada + escudo), **Roxa** (3 fios). Cor, imagem própria, tamanho, velocidade. Regras: HP, tempo de invencibilidade, tamanho da caixa, **intensidade geral** (para as fases de chefe), dano do LUTAR, **itens dos jogadores**, menu final, sons, hitboxes |
-| **Ataques** | Lista de ataques do turno, em sequência, simultâneos ou sorteados. Cada ataque tem duração, dano, velocidade, quantidade, tamanho, **regra de cor** (branco, azul = não se mexa, laranja = mexa-se, verde = cura), **aparência do projétil** (círculo, quadrado, diamante, estrela, osso, seta, emoji ou imagem), fala própria e tamanho de caixa. **Turnos salvos** guardam conjuntos de ataques para carregar cada fase na hora |
-| **Sons** | Música e cada efeito: padrão (original), **arquivo enviado do computador**, **YouTube**, **SoundCloud**, Google Drive, Dropbox ou link de mp3. Volumes e botão ▶ para ouvir |
-| **Batalha** | **Fase do próximo turno** (⏭ avança), iniciar / próximo turno, assistir, testar sozinho, encerrar, quem participa, **HP do monstro**, HP de cada jogador (−5, +5, curar), repor itens, registro das ações, backup em JSON |
-
-### Ataques disponíveis
-
-Chuva · Rajada lateral · Ossos · Anel · Espiral · Mirado · Laser · Ricochete · Túnel · Explosão · Flechas ·
-Canhão de feixe · Arco · Estacas · Varredura (azul/laranja) · Fios · Pancada de gravidade
-
-A **pancada de gravidade** joga a alma contra uma das 4 paredes: ela vira alma azul com a gravidade
-naquela direção até o fim do turno, e uma fileira de ossos sobe daquela parede. Pule para longe dela (a seta oposta à parede, ou Z).
-
-### Presets
-
-A aba **Presets** traz 43 lutas de **Undertale**, **Deltarune** e do fangame **Last Breath** recriadas só como *moveset*: padrões de ataque,
-mecânica da alma (vermelha, azul, verde, roxa), tamanho da caixa e fases que vão ficando mais difíceis.
-Não há arte, som, código ou fala dos jogos; a aparência do monstro e as falas ficam por conta do mestre.
-São aproximações feitas com os ataques da extensão. As lutas marcadas como "(aproximado)" são as menos fiéis.
-
-- **Carregar:** troca monstro, alma, ataques e caixa. Música, itens e regras dos jogadores continuam os seus.
-  As fases entram na lista de turnos; escolha a fase na aba **Batalha** antes de cada turno (⏭ passa para a próxima).
-- **Desfazer:** volta para o que estava antes de carregar.
-- **Meus presets:** "Salvar atual" guarda a luta inteira (com os turnos salvos como fases) neste navegador.
-- **Arquivo:** "Baixar atual" gera um `.batalha.json`; "Abrir arquivo" carrega um preset de outra pessoa ou de outro computador.
-
-### Fluxo de um turno
-
-1. O mestre clica em **Iniciar batalha**. A tela abre em tela cheia para os jogadores marcados.
-2. A caixa mostra o texto do turno (ex.: "* Fulano bloqueia o caminho!"). Depois o monstro fala no balão e a caixa encolhe.
-3. Vêm os ataques. Cada jogador controla **a própria alma** e vê as dos outros translúcidas.
-4. No fim, cada jogador escolhe:
-   - **LUTAR:** uma barra corre sobre o alvo; quanto mais perto do centro, mais dano (centro perfeito = crítico).
-     O dano sai do HP do monstro automaticamente.
-   - **AGIR:** as opções que o mestre definiu. "Conferir" mostra ATK, DEF e a descrição. "Outra coisa…" deixa escrever.
-   - **ITEM:** os itens definidos pelo mestre curam na hora e acabam. "Outra coisa…" deixa escrever.
-   - **POUPAR:** Poupar (fica amarelo se o monstro pode ser poupado) ou Fugir.
-5. O mestre recebe cada ação como notificação, resolve na mesa e responde/avança pela **barra do mestre**.
-
-### Barra do mestre (dentro da tela da batalha)
-
-Aparece para o mestre quando ele assiste à batalha (👁 Assistir) e no **🧪 Testar sozinho**:
-
-- **Responder na caixa:** o texto aparece na caixa de diálogo dos jogadores (ex.: "O monstro aceitou o elogio!").
-  Também dá para responder pela aba Batalha do painel.
-- **▶ Próximo turno:** novo turno com os mesmos ataques.
-- **⏭ Próxima fase:** passa para a próxima fase salva (de um preset ou dos seus turnos) e já começa o turno.
-- **■ Encerrar:** termina a batalha para todos (no teste, fecha a janela).
-
-No teste sozinho, depois de escolher LUTAR/AGIR/ITEM/POUPAR, aperte **Z** (ou ▶) para seguir para o próximo turno.
-
-O HP e os itens usados de cada jogador ficam salvos entre os turnos. Se o HP chega a 0, a alma se parte e o jogador assiste até o mestre curar.
-
-## Sons e música
-
-O padrão é uma **música original sintetizada** e efeitos sintetizados, feitos para esta extensão. Na aba **Sons** o mestre pode trocar cada um:
-
-- **📤 Enviar arquivo:** escolha um mp3 do seu computador (até 10 MB). Ele fica guardado no seu navegador e vai para os jogadores
-  pelo próprio Owlbear, em pedaços (cerca de 1 MB a cada 10 s). Cada jogador baixa uma vez e guarda. Deixe a sala aberta enquanto envia.
-- **🔗 YouTube / SoundCloud:** cole o link. O player oficial aparece no canto da tela (as regras do YouTube não deixam escondê-lo).
-  Vídeos com incorporação bloqueada pelo dono não tocam.
-- **🔗 Google Drive / Dropbox:** cole o link de compartilhamento (com acesso "qualquer pessoa com o link").
-- **🔗 Link direto** para um arquivo de áudio.
-- **Spotify não funciona:** fora do app ele só libera prévias de 30 segundos.
-
-Use apenas áudios que você tem direito de usar.
-
-## Controles do jogador
-
-- Setas ou WASD movem a alma. Shift (ou X) deixa mais lento.
-- Alma azul: Cima/W/Z/Espaço pula. Segure para pular mais alto.
-- Alma verde: as setas viram o escudo.
-- Alma roxa: cima/baixo troca de fio.
-- Também dá para arrastar a alma com o mouse ou o dedo.
-- **Controle (qualquer um que o navegador reconheça):** analógico esquerdo ou direcional move; **A** (ou Y/Start) pula e confirma;
-  **B** (ou X/gatilhos) deixa devagar e pula o texto. No menu, o direcional escolhe e **A** confirma; apertar **A** de novo envia a ação.
-  Aperte qualquer botão uma vez para o navegador detectar o controle. No Chrome/Edge funciona dentro do Owlbear;
-  em alguns navegadores (ex.: Firefox) o controle pode ficar bloqueado dentro de extensões.
-- Se o teclado não responder, clique na tela da batalha.
-
-## Testar sem o Owlbear
-
-Com `npm run dev` rodando, abra no navegador:
-
-- `http://localhost:5173/battle.html`: demonstração com 4 ataques
-- `http://localhost:5173/battle.html?ataque=laser&modo=azul&hitbox`: um ataque específico, um modo de alma e as hitboxes
-
-## Arquivos
-
-- `src/engine.ts`: motor da batalha (alma, padrões de ataque, colisão, desenho)
-- `src/battle.ts`: tela da batalha dentro do Owlbear (sincronização, HP, escolhas)
-- `src/main.ts`: painel do mestre e do jogador
-- `src/audio.ts`: efeitos, música original sintetizada, tocador de arquivos, YouTube e SoundCloud
-- `src/files.ts`: guarda os arquivos de áudio no navegador e os envia em pedaços aos jogadores
-- `src/media.ts`: reconhece links (YouTube, SoundCloud, Drive, Dropbox)
-- `src/presets.ts`: presets de moveset e formato do arquivo de preset
-- `src/gm.ts`: turnos salvos, fase atual e início de turno (painel e barra do mestre)
-- `src/background.ts`: abre e fecha a batalha nos jogadores e avisa o mestre
-- `src/shared.ts`: tipos, padrões e lista de ataques/almas
-- `vite.config.ts`: gera o `manifest.json` e a lista `audio/lista.json`
-- `public/audio/`: áudios opcionais que ficam junto com o site
+- `src/engine.ts` — motor: almas, ataques, canhões, cenário, colisão, desenho
+- `src/battle.ts` — tela da batalha no Owlbear (sincronização, HP, escolhas, barra do mestre)
+- `src/main.ts` / `src/panel.css` — painel do mestre e do jogador
+- `src/presets.ts` — presets de moveset
+- `src/gm.ts` — turnos salvos, fase atual, início de turno
+- `src/audio.ts`, `src/files.ts`, `src/media.ts` — sons, música, envio de arquivos e links
+- `src/background.ts` — abre/fecha a batalha, avisa o mestre, repassa arquivos
+- `src/shared.ts` — tipos, padrões e listas
+- `vite.config.ts` — gera o `manifest.json` e `audio/lista.json`

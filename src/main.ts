@@ -19,8 +19,10 @@ import {
   describeAction,
   HP_KEY,
   MODAL_ID,
+  EFEITO_INFO,
   SFX_INFO,
   SOUL_INFO,
+  defaultCenario,
   SavedTurn,
   SfxName,
   SoulMode,
@@ -41,7 +43,9 @@ const inOBR = OBR.isAvailable;
 let cfg: BattleConfig = defaultConfig();
 let battle: BattleState | null = null;
 let players: Player[] = [];
-let tab: "monstro" | "alma" | "ataques" | "sons" | "presets" | "batalha" = "batalha";
+let tab: "monstro" | "cenario" | "alma" | "ataques" | "sons" | "presets" | "batalha" = "batalha";
+const openSecs = new Set<string>();
+const closedSecs = new Set<string>();
 let presetFilter: "todos" | "Undertale" | "Deltarune" | "Fangame" | "meus" = "todos";
 let presetSearch = "";
 let undoCfg: BattleConfig | null = null;
@@ -51,7 +55,7 @@ let audioFiles: string[] = [];
 const urlMode = new Set<string>();
 let sendStatus = "";
 let selected = new Set<string>();
-let openCards = new Set<number>([0]);
+let openCards = new Set<number>();
 const log: string[] = [];
 
 const KIND_LABEL: Record<BulletKind, string> = {
@@ -60,6 +64,7 @@ const KIND_LABEL: Record<BulletKind, string> = {
   laranja: "Laranja — fere se você ficar PARADO",
   verde: "Verde — cura ao tocar",
 };
+const KIND_DOT: Record<BulletKind, string> = { branco: "#fff", azul: "#14a9ff", laranja: "#ffa040", verde: "#22dd22" };
 const SHAPE_LABEL: Record<BulletShape, string> = {
   circulo: "Círculo",
   quadrado: "Quadrado",
@@ -103,7 +108,8 @@ function area(path: string, label: string, placeholder = "") {
 function num(path: string, label: string, min: number, max: number, step = 1) {
   return `<div><label>${label}</label><input type="number" data-path="${path}" data-num min="${min}" max="${max}" step="${step}" value="${getPath(path)}"></div>`;
 }
-const fmt = (path: string, v: number) => (path.includes(".vol") ? `${Math.round(v * 100)}%` : `${v.toFixed(1)}×`);
+const fmt = (path: string, v: number) =>
+  path.includes(".vol") || path.startsWith("cenario.") ? `${Math.round(v * 100)}%` : `${v.toFixed(1)}×`;
 function range(path: string, label: string, min: number, max: number, step: number) {
   const v = Number(getPath(path));
   return `<div><label>${label}: <b data-out="${path}">${fmt(path, v)}</b></label><input type="range" data-path="${path}" data-num min="${min}" max="${max}" step="${step}" value="${v}"></div>`;
@@ -176,59 +182,108 @@ function imageField(path: string, label: string) {
 }
 
 // ---------- abas ----------
+/** Seção recolhível que lembra se estava aberta entre uma renderização e outra. */
+function sec(id: string, title: string, body: string, openByDefault = false) {
+  const open = openSecs.has(id) || (openByDefault && !closedSecs.has(id));
+  return `<details class="sec" data-sec="${id}" ${open ? "open" : ""}><summary>${title}</summary>${body}</details>`;
+}
+
 function viewMonstro() {
   return `
-    ${text("monstro.nome", "Nome do monstro / personagem")}
-    ${imageField("monstro.imagem", "Aparência (URL da imagem ou token selecionado)")}
+    ${text("monstro.nome", "Nome")}
+    ${imageField("monstro.imagem", "Aparência (link da imagem ou token selecionado)")}
     ${range("monstro.escala", "Tamanho na tela", 0.3, 2, 0.1)}
-    ${area("monstro.fala", "Fala no balão (antes dos ataques)", "Você não vai passar daqui.")}
-    ${text("monstro.frase", "Texto da caixa nos turnos seguintes (opcional)", "* {n} te encara. — {n} vira o nome")}
-    ${imageField("monstro.fundo", "Fundo da batalha (opcional)")}
-    <h2>Status</h2>
-    <div class="grid3">
-      ${num("monstro.hp", "HP (0 = sem barra)", 0, 99999)}
-      ${num("monstro.atk", "ATK", 0, 999)}
-      ${num("monstro.def", "DEF", 0, 999)}
+    ${area("monstro.fala", "Fala no balão antes dos ataques", "Você não vai passar daqui.")}
+    ${sec(
+      "status",
+      "Status e AGIR",
+      `<div class="grid3">
+        ${num("monstro.hp", "HP (0 = sem barra)", 0, 99999)}
+        ${num("monstro.atk", "ATK", 0, 999)}
+        ${num("monstro.def", "DEF", 0, 999)}
+      </div>
+      ${text("monstro.descricao", "Descrição do “Conferir”", "Parece cansado de lutar.")}
+      <label>Opções do AGIR (uma por linha)</label>
+      <textarea data-lines="monstro.acoes">${esc(cfg.monstro.acoes.join("\n"))}</textarea>
+      ${check("monstro.poupavel", "Pode ser poupado (fica amarelo no POUPAR)")}`,
+    )}
+    ${sec(
+      "textos",
+      "Texto da caixa",
+      `${text("monstro.frase", "Nos turnos seguintes ao primeiro", "* {n} te encara.")}
+      <p class="muted">{n} vira o nome do monstro. Vazio = frases automáticas.</p>`,
+    )}`;
+}
+
+function viewCenario() {
+  const sc = cfg.cenario;
+  const efeitos = EFEITO_INFO as Record<string, string>;
+  const lib = loadLibrary();
+  const fase = phaseIdx >= 0 ? lib[phaseIdx] : undefined;
+  return `
+    <div class="grid2">
+      <div><label>Fundo</label><input type="color" data-path="cenario.fundoCor" value="${sc.fundoCor}"></div>
+      ${select("cenario.efeito", "Efeito animado", efeitos)}
     </div>
-    ${text("monstro.descricao", "Descrição do “Conferir”", "Parece cansado de lutar.")}
-    <label>Opções do AGIR (uma por linha; “Conferir” mostra o status)</label>
-    <textarea data-lines="monstro.acoes">${esc(cfg.monstro.acoes.join("\n"))}</textarea>
-    ${check("monstro.poupavel", "Pode ser poupado (nome fica amarelo no POUPAR)")}
-    <p class="muted">Dica: selecione um token no mapa e clique em <b>Token</b> para usar a arte dele.</p>`;
+    <div class="grid3">
+      <div><label>Cor do efeito</label><input type="color" data-path="cenario.corEfeito" value="${sc.corEfeito}"></div>
+      <div><label>Borda da caixa</label><input type="color" data-path="cenario.bordaCor" value="${sc.bordaCor}"></div>
+      <div><label>Dentro da caixa</label><input type="color" data-path="cenario.caixaCor" value="${sc.caixaCor}"></div>
+    </div>
+    <div class="grid2">
+      ${range("cenario.escuro", "Escuro nas bordas", 0, 0.9, 0.05)}
+      ${range("cenario.tremor", "Tremor da tela", 0, 1, 0.05)}
+    </div>
+    ${check("mecanica.efeitos", "Clarões e aberração cromática nos ataques fortes")}
+    ${imageField("monstro.fundo", "Imagem de fundo (opcional)")}
+    <div class="row" style="margin-top:8px">
+      <button class="btn" data-act="scene-reset">Cenário padrão</button>
+      ${fase ? `<button class="btn" data-act="scene-phase" title="Grava este cenário na fase escolhida">Salvar na fase “${esc(fase.nome.split(" — ").pop() ?? "")}”</button>` : ""}
+    </div>
+    <p class="muted">Cada fase de um preset tem o próprio cenário: ao trocar de fase, ele muda junto.</p>`;
 }
 
 function viewAlma() {
   const modes = (Object.keys(SOUL_INFO) as SoulMode[])
     .map(
-      (m) => `<div class="soul-opt ${cfg.alma.modo === m ? "on" : ""}" data-mode="${m}">
-        <b style="color:${SOUL_INFO[m].cor}">♥ ${SOUL_INFO[m].nome}</b><span class="muted">${SOUL_INFO[m].desc}</span></div>`,
+      (m) => `<div class="soul-opt ${cfg.alma.modo === m ? "on" : ""}" data-mode="${m}" title="${esc(SOUL_INFO[m].desc)}">
+        <b style="color:${SOUL_INFO[m].cor}">♥ ${SOUL_INFO[m].nome}</b></div>`,
     )
     .join("");
   const color = cfg.alma.cor || SOUL_INFO[cfg.alma.modo].cor;
   return `
-    <h2>Mecânica da alma</h2>
     <div class="souls">${modes}</div>
-    <h2>Aparência da alma</h2>
-    <div class="row"><label class="shrink" style="margin:0">Cor</label>
-      <input type="color" class="shrink" data-path="alma.cor" value="${color}">
-      <button class="btn small shrink" data-act="cor-padrao">Cor do modo</button><span></span></div>
-    ${imageField("alma.imagem", "Imagem no lugar do coração (opcional)")}
-    <div class="grid2">${range("alma.tamanho", "Tamanho", 0.5, 2, 0.1)}${range("alma.velocidade", "Velocidade", 0.4, 2, 0.1)}</div>
-    <h2>Regras</h2>
-    <div class="grid2">
-      ${num("mecanica.hpMax", "HP máximo", 1, 999)}
-      ${num("mecanica.invencivel", "Invencível após dano (s)", 0, 5, 0.1)}
-      ${num("mecanica.caixaL", "Largura da caixa", 40, 600, 10)}
-      ${num("mecanica.caixaA", "Altura da caixa", 40, 180, 10)}
-    </div>
-    ${range("mecanica.intensidade", "Intensidade geral (fases do chefe)", 0.5, 2.5, 0.1)}
-    ${num("mecanica.danoAtaque", "Dano do LUTAR com acerto perfeito", 0, 9999)}
-    <h2>Itens dos jogadores</h2>
-    <p class="muted">Um por linha: <b>nome | cura | quantidade</b>. Cada jogador tem os próprios.</p>
-    <textarea data-items>${esc(cfg.itens.map((i) => `${i.nome} | ${i.cura} | ${i.qtd}`).join("\n"))}</textarea>
-    ${check("mecanica.menuFinal", "Mostrar LUTAR / AGIR / ITEM / POUPAR no fim do turno")}
-    ${check("mecanica.sons", "Efeitos sonoros")}
-    ${check("mecanica.mostrarHitbox", "Mostrar hitboxes (para testar)")}`;
+    <p class="muted">${esc(SOUL_INFO[cfg.alma.modo].desc)}</p>
+    ${sec(
+      "aparencia",
+      "Aparência da alma",
+      `<div class="row"><label class="shrink" style="margin:0">Cor</label>
+        <input type="color" class="shrink" data-path="alma.cor" value="${color}">
+        <button class="btn small shrink" data-act="cor-padrao">Cor do modo</button><span></span></div>
+      ${imageField("alma.imagem", "Imagem no lugar do coração")}
+      <div class="grid2">${range("alma.tamanho", "Tamanho", 0.5, 2, 0.1)}${range("alma.velocidade", "Velocidade", 0.4, 2, 0.1)}</div>`,
+    )}
+    ${sec(
+      "regras",
+      "Regras",
+      `<div class="grid2">
+        ${num("mecanica.hpMax", "HP máximo", 1, 999)}
+        ${num("mecanica.invencivel", "Invencível após dano (s)", 0, 5, 0.1)}
+        ${num("mecanica.caixaL", "Largura da caixa", 40, 600, 10)}
+        ${num("mecanica.caixaA", "Altura da caixa", 40, 180, 10)}
+      </div>
+      ${range("mecanica.intensidade", "Intensidade geral", 0.5, 2.5, 0.1)}
+      ${num("mecanica.danoAtaque", "Dano do LUTAR (acerto perfeito)", 0, 9999)}
+      ${check("mecanica.karma", "Karma (KR): cada toque envenena e o HP drena")}
+      ${check("mecanica.menuFinal", "Menu LUTAR / AGIR / ITEM / POUPAR no fim do turno")}
+      ${check("mecanica.mostrarHitbox", "Mostrar hitboxes (para testar)")}`,
+    )}
+    ${sec(
+      "itens",
+      "Itens dos jogadores",
+      `<p class="muted">Um por linha: <b>nome | cura | quantidade</b></p>
+      <textarea data-items>${esc(cfg.itens.map((i) => `${i.nome} | ${i.cura} | ${i.qtd}`).join("\n"))}</textarea>`,
+    )}`;
 }
 
 function viewAtaques() {
@@ -239,91 +294,105 @@ function viewAtaques() {
     .map((a, i) => {
       const p = `ataques.${i}`;
       const open = openCards.has(i);
-      return `<div class="card">
+      const kindDot = a.tipoDano === "branco" ? "" : `<span class="dot" style="background:${KIND_DOT[a.tipoDano]}" title="${esc(KIND_LABEL[a.tipoDano])}"></span>`;
+      return `<div class="card ${open ? "open" : ""}">
         <div class="card-head">
           <span class="num">${i + 1}</span>
-          <select data-path="${p}.tipo" data-rerender>${Object.entries(typeOpts)
+          <select data-path="${p}.tipo" data-rerender title="${esc(ATTACK_INFO[a.tipo].desc)}">${Object.entries(typeOpts)
             .map(([k, l]) => `<option value="${k}" ${k === a.tipo ? "selected" : ""}>${l}</option>`)
             .join("")}</select>
-          <button class="btn small" data-act="toggle" data-i="${i}">${open ? "▾" : "▸"}</button>
+          <input type="number" class="dur" data-path="${p}.duracao" data-num min="1" max="60" step="0.5" value="${a.duracao}" title="Duração (s)">
+          ${kindDot}
+          <button class="btn small" data-act="toggle" data-i="${i}" title="Ajustes">${open ? "▾" : "⚙"}</button>
           <button class="btn small" data-act="up" data-i="${i}" title="Subir">↑</button>
           <button class="btn small" data-act="dup" data-i="${i}" title="Duplicar">⧉</button>
           <button class="btn small" data-act="del" data-i="${i}" title="Remover">✕</button>
         </div>
-        <div class="muted">${ATTACK_INFO[a.tipo].desc} • ${a.duracao}s</div>
-        <div class="${open ? "" : "hidden"}">
-          <div class="grid3">
-            ${num(`${p}.duracao`, "Duração (s)", 1, 60, 0.5)}
-            ${num(`${p}.dano`, "Dano / cura", 0, 999)}
-            ${num(`${p}.tamanho`, "Tamanho ×", 0.3, 4, 0.1)}
-          </div>
+        ${
+          open
+            ? `<div class="muted">${ATTACK_INFO[a.tipo].desc}</div>
           <div class="grid2">
             ${range(`${p}.velocidade`, "Velocidade", 0.3, 3, 0.1)}
             ${range(`${p}.densidade`, "Quantidade", 0.3, 3, 0.1)}
           </div>
-          ${select(`${p}.tipoDano`, "Cor / regra do dano", KIND_LABEL)}
           <div class="row">
-            ${select(`${p}.forma`, "Aparência do projétil", SHAPE_LABEL, true)}
+            ${select(`${p}.forma`, "Aparência", SHAPE_LABEL, true)}
             <div class="shrink"><label>Cor</label><input type="color" data-path="${p}.cor" value="${a.cor || "#ffffff"}"></div>
           </div>
           ${a.forma === "emoji" ? text(`${p}.emoji`, "Emoji", "⭐") : ""}
           ${a.forma === "imagem" ? imageField(`${p}.imagem`, "Imagem do projétil") : ""}
-          ${text(`${p}.fala`, "Fala durante este ataque (opcional)")}
-          <div class="grid2">
-            ${num(`${p}.caixaL`, "Caixa: largura (0 = padrão)", 0, 600, 10)}
-            ${num(`${p}.caixaA`, "Caixa: altura (0 = padrão)", 0, 180, 10)}
-          </div>
-        </div>
+          ${select(`${p}.tipoDano`, "Regra do dano", KIND_LABEL)}
+          ${sec(
+            `atk-mais-${i}`,
+            "Mais",
+            `<div class="grid2">
+              ${num(`${p}.dano`, "Dano / cura", 0, 999)}
+              ${num(`${p}.tamanho`, "Tamanho ×", 0.3, 4, 0.1)}
+              ${num(`${p}.caixaL`, "Caixa: largura (0 = padrão)", 0, 600, 10)}
+              ${num(`${p}.caixaA`, "Caixa: altura (0 = padrão)", 0, 180, 10)}
+            </div>
+            ${text(`${p}.fala`, "Fala durante este ataque")}`,
+          )}`
+            : ""
+        }
       </div>`;
     })
     .join("");
 
   const lib = loadLibrary();
+  const total =
+    cfg.mecanica.ordem === "simultaneo"
+      ? Math.max(0, ...cfg.ataques.map((x) => x.duracao))
+      : cfg.ataques.reduce((n, x) => n + x.duracao, 0);
   return `
-    ${select("mecanica.ordem", "Como os ataques do turno rodam", {
-      sequencia: "Em sequência (um depois do outro)",
-      simultaneo: "Todos ao mesmo tempo",
-      aleatorio: "Sorteia um deles",
-    })}
-    ${cards || '<p class="muted">Nenhum ataque. Adicione um abaixo.</p>'}
+    <div class="row">
+      ${select("mecanica.ordem", "Ordem", {
+        sequencia: "Um depois do outro",
+        simultaneo: "Todos juntos",
+        aleatorio: "Sorteia um",
+      })}
+      <div class="shrink muted" style="padding-top:18px">${total.toFixed(1)}s</div>
+    </div>
+    ${cards || '<p class="muted">Nenhum ataque ainda.</p>'}
     <div class="row">
       <select id="newType">${Object.entries(typeOpts).map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select>
-      <button class="btn shrink" data-act="add">+ Adicionar ataque</button>
+      <button class="btn shrink" data-act="add">+ Ataque</button>
     </div>
-    <h2>Turnos salvos</h2>
-    <p class="muted">Monte as fases da luta antes da sessão e carregue cada uma na hora.</p>
-    <div class="row"><input type="text" id="turnName" placeholder="Nome do turno (ex.: Fase 2)">
-      <button class="btn shrink" data-act="save-turn">Salvar</button></div>
-    ${lib
-      .map(
-        (t, i) => `<div class="player"><span class="name">${esc(t.nome)} <span class="muted">(${t.ataques.length} ataques)</span></span>
-        <button class="btn small" data-act="load-turn" data-i="${i}">Carregar</button>
-        <button class="btn small" data-act="del-turn" data-i="${i}">✕</button></div>`,
-      )
-      .join("")}`;
+    ${sec(
+      "turnos",
+      `Turnos salvos (${lib.length})`,
+      `<div class="row"><input type="text" id="turnName" placeholder="Nome (ex.: Fase 2)">
+        <button class="btn shrink" data-act="save-turn">Salvar atual</button></div>
+      ${lib
+        .map(
+          (t, i) => `<div class="player"><span class="name" title="${esc(t.nome)}">${esc(t.nome)}</span>
+          <span class="muted">${t.ataques.length}×</span>
+          <button class="btn small" data-act="load-turn" data-i="${i}">Usar</button>
+          <button class="btn small" data-act="del-turn" data-i="${i}">✕</button></div>`,
+        )
+        .join("")}
+      ${lib.length ? '<button class="btn small" data-act="clear-turns" style="margin-top:6px">Limpar lista</button>' : ""}`,
+    )}`;
 }
 
 function viewSons() {
   const sfx = (Object.keys(SFX_INFO) as SfxName[]).map((k) => audioField(`audio.sons.${k}`, SFX_INFO[k])).join("");
   return `
-    ${check("mecanica.sons", "Ativar música e efeitos sonoros")}
+    ${check("mecanica.sons", "Música e efeitos sonoros ligados")}
     ${sendStatus ? `<div class="status on" id="sendStatus" style="margin-top:6px">${esc(sendStatus)}</div>` : ""}
-    <h2>Música da batalha</h2>
-    ${audioField("audio.musica", "Faixa (toca em loop)", true)}
+    ${audioField("audio.musica", "Música (em loop)", true)}
     <div id="previewBox" class="hidden" style="margin-top:6px"></div>
     ${range("audio.volMusica", "Volume da música", 0, 1, 0.05)}
-    <h2>Efeitos</h2>
-    ${sfx}
-    ${range("audio.volSons", "Volume dos efeitos", 0, 1, 0.05)}
-    <h2>Como funciona</h2>
-    <p class="muted"><b>📤 Enviar arquivo:</b> escolha um mp3 do seu computador (até ${MAX_FILE_MB} MB). Ele fica guardado no seu navegador
-    e é enviado aos jogadores pelo próprio Owlbear (cerca de 1 MB a cada 10 s). Cada jogador baixa uma vez e guarda.
-    Deixe a sala aberta enquanto envia. Se trocar de computador, envie de novo.</p>
-    <p class="muted"><b>🔗 YouTube e SoundCloud:</b> cole o link do vídeo ou da faixa. O player oficial aparece no canto da tela da batalha
-    (o YouTube não deixa esconder o player). Vídeos com incorporação bloqueada não tocam.</p>
-    <p class="muted"><b>🔗 Google Drive / Dropbox:</b> cole o link de compartilhamento (precisa estar como "qualquer pessoa com o link").</p>
-    <p class="muted"><b>Spotify não funciona:</b> fora do app ele só libera prévias de 30 segundos.</p>
-    <p class="muted">Use apenas áudios que você tem direito de usar.</p>`;
+    ${sec("sfx", "Efeitos sonoros", `${sfx}${range("audio.volSons", "Volume dos efeitos", 0, 1, 0.05)}`)}
+    ${sec(
+      "ajuda-sons",
+      "Como usar meus áudios",
+      `<p class="muted"><b>📤 Arquivo:</b> mp3 do seu computador (até ${MAX_FILE_MB} MB). Vai para os jogadores pelo Owlbear,
+      ~1 MB a cada 10 s, e cada um guarda. Deixe a sala aberta enquanto envia.</p>
+      <p class="muted"><b>🔗 YouTube / SoundCloud:</b> cole o link; o player oficial aparece no canto da batalha.</p>
+      <p class="muted"><b>🔗 Drive / Dropbox:</b> link de compartilhamento aberto a qualquer pessoa.</p>
+      <p class="muted">Spotify não funciona (só prévias de 30 s). Use áudios que você tem direito de usar.</p>`,
+    )}`;
 }
 
 function viewPresets() {
@@ -345,38 +414,40 @@ function viewPresets() {
   ];
   const cards = shown
     .map(({ p, src, i }) => {
-      const soul = SOUL_INFO[p.config.alma.modo];
-      const modos = [...new Set(p.turnos.map((t) => t.modo).filter(Boolean))] as SoulMode[];
-      return `<div class="card">
-        <div class="card-head"><b style="flex:1;font:22px VT323,monospace">${esc(p.nome)}</b>
+      const modos = [...new Set([p.config.alma.modo, ...(p.turnos.map((t) => t.modo).filter(Boolean) as SoulMode[])])];
+      const hearts = modos.map((m) => `<span style="color:${SOUL_INFO[m].cor}" title="${esc(SOUL_INFO[m].nome)}">♥</span>`).join("");
+      const tags = [p.jogo, `${Math.max(1, p.turnos.length)} fases`, p.config.mecanica.karma ? "KR" : ""].filter(Boolean).join(" · ");
+      return `<div class="preset">
+        <div class="preset-main"><b>${hearts} ${esc(p.nome)}</b><span class="muted">${esc(p.descricao)}</span>
+          <span class="tag">${esc(tags)}</span></div>
+        <div class="preset-actions">
+          <button class="btn small go" data-act="load-preset" data-src="${src}" data-i="${i}">Carregar</button>
           ${src === "meu" ? `<button class="btn small" data-act="export-preset" data-i="${i}" title="Baixar arquivo">💾</button>
           <button class="btn small" data-act="del-preset" data-i="${i}" title="Apagar">✕</button>` : ""}
-          <button class="btn small go" data-act="load-preset" data-src="${src}" data-i="${i}">Carregar</button></div>
-        <div class="muted">${esc(p.descricao)}</div>
-        <div class="muted">${p.jogo ? `${esc(p.jogo)} • ` : ""}<span style="color:${soul.cor}">♥</span> ${
-          modos.length > 1 ? modos.map((m) => SOUL_INFO[m].nome.split(" ")[0]).join(" / ") : soul.nome.split(" ")[0]
-        } • ${Math.max(1, p.turnos.length)} fase(s) • HP ${p.config.monstro.hp}</div>
+        </div>
       </div>`;
     })
     .join("");
   return `
     ${presetStatus ? `<div class="status on">${esc(presetStatus)} ${undoCfg ? '<button class="btn small" data-act="undo-preset">Desfazer</button>' : ""}</div>` : ""}
-    <p class="muted">Presets de <b>moveset</b>: os ataques, a mecânica da alma e as fases de cada luta, recriados de forma aproximada
-    com os ataques da extensão. A aparência do monstro fica por sua conta (aba Monstro). Sua música, itens e HP dos jogadores são mantidos.</p>
-    <div class="tabs" style="margin-top:6px">${filters
+    <div class="filters">${filters
       .map(([k, l]) => `<button data-filter="${k}" class="${presetFilter === k ? "on" : ""}">${l}</button>`)
       .join("")}</div>
     <input type="text" data-search placeholder="Buscar luta…" value="${esc(presetSearch)}">
-    ${cards || '<p class="muted">Nenhum preset aqui ainda.</p>'}
-    <h2>Seus presets</h2>
-    <div class="row"><input type="text" id="presetName" placeholder="Nome (ex.: Chefe da campanha)">
-      <button class="btn shrink" data-act="save-preset">Salvar atual</button></div>
-    <p class="muted">Salva monstro, alma, ataques, sons e todos os turnos salvos (aba Ataques) como as fases do preset.</p>
-    <div class="row">
-      <button class="btn" data-act="open-preset">📂 Abrir arquivo</button>
-      <button class="btn" data-act="export-current">💾 Baixar atual</button>
-    </div>
-    <textarea id="presetJson" class="hidden" style="margin-top:6px;min-height:100px" readonly></textarea>`;
+    <div class="presets">${cards || '<p class="muted">Nenhum preset aqui ainda.</p>'}</div>
+    ${sec(
+      "meus",
+      "Salvar e compartilhar",
+      `<div class="row"><input type="text" id="presetName" placeholder="Nome do preset">
+        <button class="btn shrink" data-act="save-preset">Salvar atual</button></div>
+      <p class="muted">Guarda tudo (monstro, alma, cenário, sons) com os turnos salvos como fases.</p>
+      <div class="row">
+        <button class="btn" data-act="open-preset">📂 Abrir arquivo</button>
+        <button class="btn" data-act="export-current">💾 Baixar atual</button>
+      </div>
+      <textarea id="presetJson" class="hidden" style="margin-top:6px;min-height:100px" readonly></textarea>`,
+    )}
+    <p class="muted">Só moveset (ataques, alma, fases e clima). Paródias aproximadas, sem arte ou falas dos jogos.</p>`;
 }
 
 function viewBatalha() {
@@ -390,73 +461,77 @@ function viewBatalha() {
         <input type="checkbox" data-sel="${p.id}" ${selected.has(p.id) ? "checked" : ""} title="Participa">
         <span class="dot" style="background:${p.color}"></span>
         <span class="name">${esc(p.name)}</span>
-        <div class="hpbar"><div style="width:${pct}%"></div></div>
-        <span class="muted" style="width:52px;text-align:right">${hp}/${cfg.mecanica.hpMax}</span>
+        <div class="hpbar" title="${hp}/${cfg.mecanica.hpMax}"><div style="width:${pct}%"></div></div>
         <button class="btn small" data-hp="${p.id}" data-d="-5">−5</button>
         <button class="btn small" data-hp="${p.id}" data-d="5">+5</button>
-        <button class="btn small" data-hp="${p.id}" data-d="max">♥</button>
+        <button class="btn small" data-hp="${p.id}" data-d="max" title="Curar">♥</button>
       </div>`;
     })
     .join("");
+  const mhp = battle?.monstroHp ?? cfg.monstro.hp;
   return `
-    <div class="status ${active ? "on" : ""}">${active ? `● Batalha em andamento — turno ${battle?.numero ?? 1}` : "○ Nenhuma batalha ativa"}</div>
-    ${
-      active && cfg.monstro.hp > 0
-        ? `<div class="player"><span class="name">❤ ${esc(cfg.monstro.nome)}</span>
-            <div class="hpbar" style="width:110px"><div style="width:${Math.max(0, Math.min(100, ((battle?.monstroHp ?? cfg.monstro.hp) / cfg.monstro.hp) * 100))}%;background:#20e020"></div></div>
-            <span class="muted">${battle?.monstroHp ?? cfg.monstro.hp}/${cfg.monstro.hp}</span>
-            <button class="btn small" data-act="mhp" data-d="-10">−10</button>
-            <button class="btn small" data-act="mhp" data-d="10">+10</button>
-            <button class="btn small" data-act="mhp" data-d="max">♥</button></div>`
-        : ""
-    }
-    ${phaseSelect()}
-    <button class="btn big go" data-act="start">▶ ${active ? "Próximo turno" : "Iniciar batalha"}</button>
-    <div class="row">
-      <button class="btn" data-act="watch" ${active ? "" : "disabled"}>👁 Assistir</button>
-      <button class="btn" data-act="test">🧪 Testar sozinho</button>
-      <button class="btn stop" data-act="end" ${active ? "" : "disabled"}>■ Encerrar</button>
+    <div class="hero">
+      <div class="hero-title">${esc(cfg.monstro.nome || "Monstro")}
+        <span class="muted">${active ? `turno ${battle?.numero ?? 1}` : "fora de batalha"}</span></div>
+      ${
+        cfg.monstro.hp > 0
+          ? `<div class="player"><div class="hpbar wide"><div style="width:${Math.max(0, Math.min(100, (mhp / cfg.monstro.hp) * 100))}%;background:#20e020"></div></div>
+            <span class="muted">${mhp}/${cfg.monstro.hp}</span>
+            ${active ? `<button class="btn small" data-act="mhp" data-d="-10">−10</button><button class="btn small" data-act="mhp" data-d="10">+10</button><button class="btn small" data-act="mhp" data-d="max" title="Restaurar">♥</button>` : ""}</div>`
+          : ""
+      }
+      ${phaseSelect()}
+      <button class="btn big go" data-act="start">▶ ${active ? "Próximo turno" : "Iniciar batalha"}</button>
+      <div class="row">
+        <button class="btn" data-act="test" title="Abre a batalha só para você, com a barra do mestre">🧪 Testar</button>
+        <button class="btn" data-act="watch" ${active ? "" : "disabled"}>👁 Assistir</button>
+        <button class="btn stop" data-act="end" ${active ? "" : "disabled"}>■ Encerrar</button>
+      </div>
     </div>
-    <p class="muted">“Próximo turno” usa o que estiver nas abas agora (monstro, alma e ataques). Mude entre os turnos para criar fases.</p>
-    <h2>Jogadores</h2>
-    <p class="muted">Marque quem entra na batalha (nenhum marcado = todos).</p>
-    ${rows || '<p class="muted">Nenhum jogador conectado.</p>'}
-    <div class="row" style="margin-top:6px">
-      <button class="btn" data-act="heal-all">♥ Curar todos</button>
-      <button class="btn" data-act="reset-items">🎒 Repor itens</button>
-    </div>
-    <h2>Ações dos jogadores</h2>
-    <div class="row" style="margin-bottom:6px"><input type="text" id="replyText" placeholder="Responder na caixa dos jogadores (Enter)">
-      <button class="btn shrink" data-act="reply">Enviar</button></div>
-    <div class="log">${log.length ? log.map((l) => `<div>${esc(l)}</div>`).join("") : '<span class="muted">As escolhas (LUTAR/AGIR/ITEM/POUPAR) aparecem aqui.</span>'}</div>
-    <h2>Backup</h2>
-    <div class="row"><button class="btn" data-act="export">Exportar JSON</button><button class="btn" data-act="import">Importar JSON</button></div>
-    <textarea id="json" class="hidden" style="margin-top:6px;min-height:120px"></textarea>
-    <button class="btn hidden" id="jsonApply" data-act="apply-json">Aplicar JSON</button>`;
+    ${sec(
+      "jogadores",
+      `Jogadores (${pl.length})`,
+      `${rows || '<p class="muted">Nenhum jogador conectado.</p>'}
+      <p class="muted">Marque quem entra (nenhum marcado = todos).</p>
+      <div class="row">
+        <button class="btn" data-act="heal-all">♥ Curar todos</button>
+        <button class="btn" data-act="reset-items">🎒 Repor itens</button>
+      </div>`,
+      true,
+    )}
+    ${sec(
+      "acoes",
+      "Ações e respostas",
+      `<div class="row" style="margin-bottom:6px"><input type="text" id="replyText" placeholder="Responder na caixa (Enter)">
+        <button class="btn shrink" data-act="reply">Enviar</button></div>
+      <div class="log">${log.length ? log.map((l) => `<div>${esc(l)}</div>`).join("") : '<span class="muted">LUTAR / AGIR / ITEM / POUPAR aparecem aqui.</span>'}</div>`,
+      true,
+    )}`;
 }
 
 function phaseSelect() {
   phaseIdx = getPhaseIdx();
   const lib = loadLibrary();
   if (!lib.length) return "";
-  return `<label>Fase do próximo turno</label>
-    <div class="row"><select data-phase>
-      <option value="-1" ${phaseIdx < 0 ? "selected" : ""}>Como está nas abas agora</option>
+  return `<div class="row phase"><select data-phase title="Fase do próximo turno">
+      <option value="-1" ${phaseIdx < 0 ? "selected" : ""}>Fase: como está nas abas</option>
       ${lib.map((t, i) => `<option value="${i}" ${i === phaseIdx ? "selected" : ""}>${esc(t.nome)}</option>`).join("")}
-    </select><button class="btn shrink" data-act="next-phase" title="Próxima fase da lista">⏭</button></div>`;
+    </select><button class="btn shrink" data-act="next-phase" title="Próxima fase">⏭</button></div>`;
 }
 
 function render() {
   const tabs = [
-    ["batalha", "Batalha"],
-    ["monstro", "Monstro"],
-    ["alma", "Alma"],
-    ["ataques", "Ataques"],
-    ["sons", "Sons"],
+    ["batalha", "⚔ Batalha"],
+    ["presets", "★ Presets"],
+    ["monstro", "☻ Monstro"],
+    ["cenario", "◐ Cenário"],
+    ["alma", "♥ Alma"],
+    ["ataques", "✦ Ataques"],
+    ["sons", "♪ Sons"],
   ];
-  tabs.splice(1, 0, ["presets", "Presets"]);
   const body =
     tab === "monstro" ? viewMonstro()
+    : tab === "cenario" ? viewCenario()
     : tab === "alma" ? viewAlma()
     : tab === "ataques" ? viewAtaques()
     : tab === "sons" ? viewSons()
@@ -464,13 +539,28 @@ function render() {
     : viewBatalha();
   const scroll = window.scrollY;
   app.innerHTML = `
-    <h1><span class="heart">♥</span> Batalha da Alma</h1>
     <div class="tabs">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}</div>
     <div id="body">${body}</div>`;
   window.scrollTo(0, scroll);
 }
 
 // ---------- eventos ----------
+app.addEventListener(
+  "toggle",
+  (e) => {
+    const d = e.target as HTMLDetailsElement;
+    const id = d.dataset?.sec;
+    if (!id) return;
+    if (d.open) {
+      openSecs.add(id);
+      closedSecs.delete(id);
+    } else {
+      openSecs.delete(id);
+      closedSecs.add(id);
+    }
+  },
+  true,
+);
 app.addEventListener("input", (e) => {
   const el = e.target as HTMLInputElement;
   if (el.dataset.search !== undefined) {
@@ -627,6 +717,7 @@ app.addEventListener("click", async (e) => {
         ataques: structuredClone(cfg.ataques),
         modo: cfg.alma.modo,
         intensidade: cfg.mecanica.intensidade,
+        cenario: structuredClone(cfg.cenario),
       });
       saveLibrary(lib);
       break;
@@ -649,6 +740,23 @@ app.addEventListener("click", async (e) => {
     }
     case "start":
       return startTurn();
+    case "scene-reset":
+      cfg.cenario = defaultCenario();
+      break;
+    case "scene-phase": {
+      const lib = loadLibrary();
+      if (phaseIdx >= 0 && lib[phaseIdx]) {
+        lib[phaseIdx].cenario = structuredClone(cfg.cenario);
+        saveLibrary(lib);
+        notify("Cenário salvo nesta fase.", "SUCCESS");
+      }
+      return;
+    }
+    case "clear-turns":
+      saveLibrary([]);
+      phaseIdx = -1;
+      setPhaseIdx(-1);
+      break;
     case "next-phase": {
       const lib = loadLibrary();
       if (!lib.length) return;
@@ -895,7 +1003,9 @@ function loadPreset(p: PresetFile, full: boolean) {
         caixaA: pc.mecanica.caixaA,
         ordem: pc.mecanica.ordem,
         intensidade: pc.mecanica.intensidade,
+        karma: pc.mecanica.karma,
       },
+      cenario: pc.cenario,
       ataques: pc.ataques,
     };
   }
@@ -906,7 +1016,7 @@ function loadPreset(p: PresetFile, full: boolean) {
   phaseIdx = p.turnos.length ? 0 : -1;
   setPhaseIdx(phaseIdx);
   presetStatus = `"${p.nome}" carregado${p.turnos.length ? ` com ${p.turnos.length} fase(s) — escolha a fase na aba Batalha` : ""}.`;
-  openCards = new Set([0]);
+  openCards = new Set();
 }
 
 function currentAsPreset(nome: string): PresetFile {

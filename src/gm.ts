@@ -45,6 +45,7 @@ export function applyTurn(cfg: BattleConfig, t: SavedTurn) {
   cfg.mecanica.ordem = t.ordem;
   if (t.modo) cfg.alma.modo = t.modo;
   if (t.intensidade) cfg.mecanica.intensidade = t.intensidade;
+  if (t.cenario) cfg.cenario = structuredClone(t.cenario);
 }
 
 /** Avança para a próxima fase da lista; devolve o nome dela ou null se a lista estiver vazia. */

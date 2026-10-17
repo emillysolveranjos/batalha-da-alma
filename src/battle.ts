@@ -5,7 +5,8 @@ import { BattleEngine, ChoiceResult, H, MenuData, W } from "./engine";
 import { MusicHost, MusicPlayer } from "./audio";
 import { CH_FILE_PROGRESS, CH_FILE_READY, CH_FILE_REQ, ProgressMsg, fileUrl } from "./files";
 import { parseSource } from "./media";
-import { advancePhase, newBattleState } from "./gm";
+import { advancePhase, applyTurn, newBattleState, saveLibrary, setPhaseIdx } from "./gm";
+import { BUILTIN_PRESETS } from "./presets";
 import {
   AttackType,
   BATTLE_KEY,
@@ -74,6 +75,7 @@ window.addEventListener("resize", layout);
 
 function setupScene(cfg: BattleConfig) {
   document.getElementById("bg")!.style.backgroundImage = cfg.monstro.fundo ? `url("${cfg.monstro.fundo}")` : "";
+  document.body.style.background = cfg.cenario.fundoCor || "#000";
   monsterEl.style.top = "6px";
   monsterEl.style.height = "202px";
   monsterEl.style.justifyContent = "flex-end";
@@ -254,7 +256,10 @@ function startEngine(cfg: BattleConfig, seed: number, spectator: boolean, hp: nu
   preloadSfx(cfg);
   music.setMuted(muted);
   setupScene(cfg);
-  $("help").textContent = helpText(cfg.alma.modo, spectator);
+  const help = $("help");
+  help.textContent = helpText(cfg.alma.modo, spectator);
+  help.classList.remove("fade");
+  window.setTimeout(() => help.classList.add("fade"), 7000);
   engine.start();
   if (!OBR.isAvailable) (window as unknown as { engine: BattleEngine | null }).engine = engine; // depuração
   layout();
@@ -506,6 +511,16 @@ function runDemo() {
   cfg.ataques = only
     ? [{ ...defaultAttack(only), duracao: 12 }]
     : (["chuva", "ossos", "laser", "anel"] as AttackType[]).map((t) => ({ ...defaultAttack(t), duracao: 5 }));
+  // ?preset=Nome&fase=N abre uma fase de um preset pronto (para testar sem o Owlbear)
+  const pre = params.get("preset");
+  const preset = pre ? BUILTIN_PRESETS.find((x) => x.nome.toLowerCase() === pre.toLowerCase()) : undefined;
+  if (preset) {
+    Object.assign(cfg, structuredClone(preset.config));
+    const fase = Math.max(0, Math.min(preset.turnos.length - 1, Number(params.get("fase") ?? 0)));
+    if (preset.turnos[fase]) applyTurn(cfg, preset.turnos[fase]);
+    saveLibrary(preset.turnos.map((x) => ({ ...x, nome: `${preset.nome} — ${x.nome}` })));
+    setPhaseIdx(fase);
+  }
   if (params.has("hitbox")) cfg.mecanica.mostrarHitbox = true;
   if (params.has("rapido")) cfg.ataques.forEach((a) => (a.duracao = 1));
   monsterHpMax = monsterHp = cfg.monstro.hp;

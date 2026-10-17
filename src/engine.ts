@@ -8,6 +8,7 @@ import {
   BulletShape,
   KIND_COLOR,
   SOUL_INFO,
+  defaultCenario,
   SoulMode,
   mulberry32,
 } from "./shared";
@@ -75,9 +76,42 @@ interface Bullet {
   fadeAt: number; // para lasers: some depois de ficar ativo por esse tempo
   bounce: boolean;
   ay?: number; // gravidade própria (projéteis em arco)
+  look?: BeamLook; // aparência do feixe/estaca quando ativo
+  cor?: string; // cor própria (ex.: lança amarela)
+  flip?: { cx: number; cy: number; done: boolean }; // lança que dá a volta
+  warnRed?: boolean; // aviso em linha vermelha contínua
+  pivot?: { x: number; y: number; len: number }; // feixe preso a um ponto, girando
   burstY?: number;
   beam?: boolean;
   dead?: boolean;
+}
+
+type BeamLook = "feixe" | "osso" | "espinhos" | "corte";
+
+interface Cannon {
+  x: number;
+  y: number;
+  sx: number; // de onde entra
+  sy: number;
+  tx: number; // onde para
+  ty: number;
+  ang: number;
+  fixedAng?: number; // mira fixa (senão acompanha a alma)
+  t: number;
+  enter: number;
+  charge: number;
+  fire: number;
+  width: number;
+  fired: boolean;
+  run: Running;
+  size: number;
+}
+
+interface Platform {
+  x: number;
+  y: number;
+  w: number;
+  vx: number;
 }
 
 interface Shard {
@@ -168,6 +202,26 @@ function heartSprite(color: string): HTMLCanvasElement {
       [...row].forEach((ch, x) => ch === "X" && g.fillRect(x, y, 1, 1)),
     );
     heartCache.set(color, c);
+  }
+  return c;
+}
+
+const emojiCache = new Map<string, HTMLCanvasElement>();
+function emojiSprite(emoji: string, color: string, px: number): HTMLCanvasElement {
+  const size = Math.max(6, Math.round(px));
+  const key = `${emoji}|${color}|${size}`;
+  let c = emojiCache.get(key);
+  if (!c) {
+    c = document.createElement("canvas");
+    c.width = c.height = Math.ceil(size * 1.4);
+    const g = c.getContext("2d")!;
+    g.font = `${size}px sans-serif`;
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillStyle = color;
+    g.fillText(emoji, c.width / 2, c.height / 2);
+    if (emojiCache.size > 300) emojiCache.clear();
+    emojiCache.set(key, c);
   }
   return c;
 }
@@ -396,6 +450,236 @@ const PATTERNS: Record<string, Pattern> & Partial<Record<AttackType, Pattern>> =
 };
 
 let intensity = 1;
+const CHOREO: Record<
+  "cerco" | "cruz" | "ponteiro" | "cortina" | "grade" | "plataformas" | "giratorio" | "corte" | "deriva" | "lancas" | "vortice",
+  Pattern
+> = {
+  cerco(a, dt, g) {
+    const { S, D, Z } = params(a);
+    every(a, "s", 3.2 / D, dt, () => {
+      const b = g.box;
+      const n = 5 + Math.round(D * 2);
+      const R = Math.max(b.w, b.h) / 2 + 75;
+      const base = a.rng() * Math.PI * 2;
+      const dirSpin = a.rng() < 0.5 ? 1 : -1;
+      for (let i = 0; i < n; i++) {
+        const ang = base + dirSpin * (i / n) * Math.PI * 2;
+        g.spawnCannon(a, {
+          tx: b.cx + Math.cos(ang) * R,
+          ty: b.cy + Math.sin(ang) * R,
+          enter: 0.3 + i * 0.05,
+          charge: (0.7 + i * 0.16) / Math.sqrt(S),
+          width: 24 * Z,
+        });
+      }
+    });
+  },
+
+  cruz(a, dt, g) {
+    const { S, D, Z } = params(a);
+    every(a, "s", 2.6 / D, dt, () => {
+      const b = g.box;
+      const s = g.soul;
+      const c = 0.8 / Math.sqrt(S);
+      const diag = (a.data.n = (a.data.n ?? 0) + 1) % 2 === 0;
+      if (!diag) {
+        g.spawnCannon(a, { tx: s.x, ty: b.t - 55, fixedAng: Math.PI / 2, charge: c, width: 22 * Z });
+        g.spawnCannon(a, { tx: b.l - 55, ty: s.y, fixedAng: 0, charge: c + 0.12, width: 22 * Z });
+      } else {
+        g.spawnCannon(a, { tx: b.l - 45, ty: b.t - 45, charge: c, width: 22 * Z });
+        g.spawnCannon(a, { tx: b.r + 45, ty: b.t - 45, charge: c + 0.12, width: 22 * Z });
+        if (D > 1.2) g.spawnCannon(a, { tx: b.cx, ty: b.b + 60, charge: c + 0.24, width: 22 * Z });
+      }
+    });
+  },
+
+  ponteiro(a, _dt, g) {
+    const { S, D, Z } = params(a);
+    if (a.data.init) return;
+    a.data.init = 1;
+    const b = g.box;
+    const n = D >= 1.5 ? 3 : D >= 1.1 ? 2 : 1;
+    const len = Math.hypot(b.w, b.h);
+    const spin = 1.05 * S * (a.rng() < 0.5 ? 1 : -1);
+    for (let i = 0; i < n; i++) {
+      const ang = -Math.PI / 2 + (i / n) * Math.PI * 2;
+      g.spawn(a, {
+        x: b.cx + Math.cos(ang) * (len / 2),
+        y: b.cy + Math.sin(ang) * (len / 2),
+        vx: 0,
+        vy: 0,
+        r: len / 2,
+        rw: len,
+        rh: 14 * Z,
+        ang,
+        spin,
+        warn: 0.9,
+        fadeAt: Math.max(1, a.cfg.duracao - a.t - 0.2),
+        maxLife: a.cfg.duracao - a.t + 0.2,
+        beam: true,
+        look: "feixe",
+        pivot: { x: b.cx, y: b.cy, len },
+      });
+    }
+  },
+
+  cortina(a, dt, g) {
+    const { S, D, Z } = params(a);
+    every(a, "s", 1.7 / D, dt, () => {
+      const b = g.box;
+      const left = (a.data.n = (a.data.n ?? 0) + 1) % 2 === 1;
+      const kind = a.cfg.tipoDano === "branco" ? "azul" : a.cfg.tipoDano;
+      const n = 6 + Math.round(D * 2);
+      for (let i = 0; i < n; i++) {
+        g.spawn(a, {
+          x: left ? b.l - 10 - i * 11 * Z : b.r + 10 + i * 11 * Z,
+          y: b.cy,
+          vx: (left ? 1 : -1) * 175 * S,
+          vy: 0,
+          r: b.h / 2,
+          rw: 7 * Z,
+          rh: b.h + 20,
+          ang: 0,
+          kind,
+        });
+      }
+    });
+  },
+
+  grade(a, dt, g) {
+    const { S, D, Z } = params(a);
+    every(a, "s", 1.3 / D, dt, () => {
+      const b = g.box;
+      const cols = clamp(Math.round(b.w / 34), 4, 10);
+      const off = a.rng() * (b.w / cols);
+      const gap = 46 * g.soulScale;
+      const warn = 0.5 / Math.sqrt(S);
+      for (let i = 0; i < cols; i++) {
+        const x = b.l + off + (i * b.w) / cols;
+        if (x > b.r - 4) continue;
+        const gy = b.t + gap / 2 + 4 + a.rng() * (b.h - gap - 8);
+        const top = gy - gap / 2 - b.t;
+        const bot = b.b - (gy + gap / 2);
+        if (top > 4) g.spawnBeam(a, x, b.t + top / 2, 10 * Z, top, warn, 0, "osso", 0.65);
+        if (bot > 4) g.spawnBeam(a, x, b.b - bot / 2, 10 * Z, bot, warn, 0, "osso", 0.65);
+      }
+    });
+  },
+
+  plataformas(a, dt, g) {
+    const { S, D } = params(a);
+    const b = g.box;
+    if (!a.data.init) {
+      a.data.init = 1;
+      g.modeOverride = "azul";
+      g.gravDir = 0;
+      // chão de espinhos (depois de um aviso) até o fim do ataque
+      g.spawnBeam(a, b.cx, b.b - 8, b.w + 8, 16, 1.1, 0, "espinhos", Math.max(1, a.cfg.duracao - a.t - 1.3));
+      const py = b.t + b.h * 0.72;
+      g.platforms.push({ x: g.soul.x, y: py, w: 64, vx: 0 });
+      // a alma começa em cima da primeira plataforma
+      g.soul.y = py - 3 - 8 * g.soulScale;
+      g.soul.vy = 0;
+      g.onPlat = true;
+    }
+    every(a, "s", 1.25 / D, dt, () => {
+      const left = a.rng() < 0.5;
+      const y = b.t + b.h * (a.rng() < 0.5 ? 0.5 : 0.72);
+      g.platforms.push({ x: left ? b.l - 40 : b.r + 40, y, w: 56, vx: (left ? 1 : -1) * 55 * S });
+    });
+  },
+
+  giratorio(a, dt, g) {
+    const { S, D, Z } = params(a);
+    every(a, "s", 0.55 / D, dt, () => {
+      const b = g.box;
+      const p = perimeterPoint(b, a.rng(), 40);
+      const tx = g.soul.x + (a.rng() - 0.5) * 50;
+      const ty = g.soul.y + (a.rng() - 0.5) * 50;
+      const d = Math.hypot(tx - p.x, ty - p.y) || 1;
+      g.spawn(a, {
+        x: p.x,
+        y: p.y,
+        vx: ((tx - p.x) / d) * 150 * S,
+        vy: ((ty - p.y) / d) * 150 * S,
+        r: 20 * Z,
+        rw: 9 * Z,
+        rh: 40 * Z,
+        ang: a.rng() * Math.PI,
+        spin: (a.rng() < 0.5 ? -1 : 1) * (5 + a.rng() * 3),
+        maxLife: 6,
+      });
+    });
+  },
+
+  corte(a, dt, g) {
+    const { S, D, Z } = params(a);
+    every(a, "s", 0.42 / D, dt, () => {
+      const ang = a.rng() * Math.PI;
+      const x = g.soul.x + (a.rng() - 0.5) * 60;
+      const y = g.soul.y + (a.rng() - 0.5) * 60;
+      const bm = g.spawnBeam(a, x, y, 900, 7 * Z, 0.55 / Math.sqrt(S), ang, "corte", 0.12);
+      bm.warnRed = true;
+    });
+  },
+
+  lancas(a, dt, g) {
+    const { S, D, Z } = params(a);
+    every(a, "s", 0.62 / D, dt, () => {
+      const b = g.box;
+      const dir = Math.floor(a.rng() * 4);
+      const dist = g.mode === "verde" ? 230 : Math.max(b.w, b.h) / 2 + 30;
+      const dx = [0, 1, 0, -1][dir];
+      const dy = [-1, 0, 1, 0][dir];
+      const yellow = a.rng() < 0.3;
+      const sp = 135 * S;
+      g.spawn(a, {
+        x: b.cx + dx * dist,
+        y: b.cy + dy * dist,
+        vx: -dx * sp,
+        vy: -dy * sp,
+        r: 6 * Z,
+        face: true,
+        maxLife: (dist * 3) / sp,
+        cor: yellow ? "#ffe14a" : undefined,
+        flip: yellow ? { cx: b.cx, cy: b.cy, done: false } : undefined,
+      });
+    });
+  },
+
+  vortice(a, dt, g) {
+    const { S, D, Z } = params(a);
+    const b = g.box;
+    g.pull = { x: b.cx, y: b.cy, f: 50 * S, t: 0.2 };
+    every(a, "s", 0.13 / D, dt, () => {
+      for (let k = 0; k < 2; k++) {
+        const th = a.t * 1.8 + k * Math.PI;
+        const R = 230;
+        const inward = 75 * S;
+        const tang = 95 * S;
+        g.spawn(a, {
+          x: b.cx + Math.cos(th) * R,
+          y: b.cy + Math.sin(th) * R,
+          vx: -Math.cos(th) * inward - Math.sin(th) * tang,
+          vy: -Math.sin(th) * inward + Math.cos(th) * tang,
+          r: 6 * Z,
+          maxLife: 4.5 / S,
+        });
+      }
+    });
+  },
+
+  deriva(a, dt, g) {
+    const { D } = params(a);
+    every(a, "s", 1.6 / D, dt, () => {
+      const maxX = Math.max(0, (600 - g.boxW) / 2 - 10);
+      const minY = 212 - (BOX_CY - g.boxH / 2);
+      const maxY = 388 - (BOX_CY + g.boxH / 2);
+      g.boxOffTarget = { x: (a.rng() * 2 - 1) * maxX, y: minY + a.rng() * Math.max(0, maxY - minY) };
+    });
+  },
+};
+
 const EXTRA: Record<"canhao" | "arco" | "estacas" | "varredura" | "fios" | "pancada", Pattern> = {
   pancada(a, dt, g) {
     const { S, D, Z } = params(a);
@@ -405,23 +689,19 @@ const EXTRA: Record<"canhao" | "arco" | "estacas" | "varredura" | "fios" | "panc
       const b = g.box;
       const th = 22 * Z;
       const warn = 0.6 / Math.sqrt(S);
-      if (dir === 0) g.spawnBeam(a, b.cx, b.b - th / 2, b.w + 8, th, warn, 0);
-      if (dir === 2) g.spawnBeam(a, b.cx, b.t + th / 2, b.w + 8, th, warn, 0);
-      if (dir === 1) g.spawnBeam(a, b.l + th / 2, b.cy, th, b.h + 8, warn, 0);
-      if (dir === 3) g.spawnBeam(a, b.r - th / 2, b.cy, th, b.h + 8, warn, 0);
+      if (dir === 0) g.spawnBeam(a, b.cx, b.b - th / 2, b.w + 8, th, warn, 0, "espinhos");
+      if (dir === 2) g.spawnBeam(a, b.cx, b.t + th / 2, b.w + 8, th, warn, 0, "espinhos");
+      if (dir === 1) g.spawnBeam(a, b.l + th / 2, b.cy, th, b.h + 8, warn, 0, "espinhos");
+      if (dir === 3) g.spawnBeam(a, b.r - th / 2, b.cy, th, b.h + 8, warn, 0, "espinhos");
     });
   },
 
   canhao(a, dt, g) {
     const { S, D, Z } = params(a);
     const b = g.box;
-    every(a, "s", 1.6 / D, dt, () => {
-      const o = perimeterPoint(b, a.rng(), 70);
-      const tx = g.soul.x + (a.rng() - 0.5) * 30;
-      const ty = g.soul.y + (a.rng() - 0.5) * 30;
-      const ang = Math.atan2(ty - o.y, tx - o.x);
-      const len = 900;
-      g.spawnBeam(a, o.x + Math.cos(ang) * (len / 2), o.y + Math.sin(ang) * (len / 2), len, 26 * Z, 0.75 / Math.sqrt(S), ang);
+    every(a, "s", 1.5 / D, dt, () => {
+      const o = perimeterPoint(b, a.rng(), 60);
+      g.spawnCannon(a, { tx: o.x, ty: o.y, charge: 0.8 / Math.sqrt(S), width: 26 * Z });
     });
   },
 
@@ -449,7 +729,7 @@ const EXTRA: Record<"canhao" | "arco" | "estacas" | "varredura" | "fios" | "panc
       const x = a.rng() < 0.6 ? g.soul.x : b.l + a.rng() * b.w;
       const h = b.h * (0.45 + a.rng() * 0.25);
       const top = a.rng() < 0.25;
-      g.spawnBeam(a, x, top ? b.t + h / 2 : b.b - h / 2, 16 * Z, h, 0.6 / Math.sqrt(S), 0);
+      g.spawnBeam(a, x, top ? b.t + h / 2 : b.b - h / 2, 14 * Z, h, 0.6 / Math.sqrt(S), 0, "osso");
     });
   },
 
@@ -484,7 +764,7 @@ const EXTRA: Record<"canhao" | "arco" | "estacas" | "varredura" | "fios" | "panc
     });
   },
 };
-Object.assign(PATTERNS, EXTRA);
+Object.assign(PATTERNS, EXTRA, CHOREO);
 
 function params(a: Running) {
   return {
@@ -544,6 +824,21 @@ export class BattleEngine {
   box: BoxRect = rect(W / 2, BOX_CY, MENU_BOX.w, MENU_BOX.h);
 
   bullets: Bullet[] = [];
+  cannons: Cannon[] = [];
+  platforms: Platform[] = [];
+  onPlat = false;
+  flash = 0; // clarão branco na tela
+  chroma = 0; // aberração cromática temporária
+  lastFilter = "";
+  boxOff = { x: 0, y: 0 };
+  pull: { x: number; y: number; f: number; t: number } | null = null;
+  shots: { x: number; y: number }[] = [];
+  shotCd = 0;
+  kr = 0; // karma acumulado
+  krT = 0;
+  sceneT = 0;
+  motes: { x: number; y: number; v: number; s: number; p: number }[] = [];
+  boxOffTarget = { x: 0, y: 0 };
   soul = { x: W / 2, y: BOX_CY, vx: 0, vy: 0, moving: false, line: 1, shield: 0 };
   hp: number;
   invuln = 0;
@@ -602,6 +897,9 @@ export class BattleEngine {
     this.gravDir = dir;
     this.soul.vy = 700;
     this.sfx.play("selecionar");
+  }
+  get scene() {
+    return this.cfg.cenario ?? defaultCenario();
   }
   get soulScale() {
     return Math.max(0.5, this.cfg.alma.tamanho);
@@ -747,7 +1045,33 @@ export class BattleEngine {
     const k = 1 - Math.pow(0.0005, dt);
     this.boxW += (tw - this.boxW) * k;
     this.boxH += (th - this.boxH) * k;
-    this.box = rect(W / 2, BOX_CY, this.boxW, this.boxH);
+    if (this.phase !== "ataque" || this.ending > 0) this.boxOffTarget = { x: 0, y: 0 };
+    const ko = 1 - Math.pow(0.02, dt);
+    this.boxOff.x += (this.boxOffTarget.x - this.boxOff.x) * ko;
+    this.boxOff.y += (this.boxOffTarget.y - this.boxOff.y) * ko;
+    this.box = rect(W / 2 + this.boxOff.x, BOX_CY + this.boxOff.y, this.boxW, this.boxH);
+    this.flash = Math.max(0, this.flash - dt * 2.2);
+    this.sceneT += dt;
+    if (this.pull) {
+      this.pull.t -= dt;
+      if (this.pull.t <= 0 || this.phase !== "ataque") this.pull = null;
+    }
+    // karma: o HP vai drenando aos poucos (nunca mata sozinho)
+    if (this.kr > 0 && (this.phase === "ataque" || this.phase === "fala")) {
+      this.krT += dt;
+      while (this.krT >= 0.3 && this.kr > 0) {
+        this.krT -= 0.3;
+        this.kr--;
+        if (this.hp > 1) {
+          this.hp--;
+          this.opt.onHp?.(this.hp);
+        }
+      }
+    } else if (this.phase !== "ataque") {
+      this.kr = 0;
+      this.krT = 0;
+    }
+    this.chroma = Math.max(0, this.chroma - dt);
 
     if (this.phase === "intro" && this.textDone && this.phaseT > 1.2 + this.text.length * 0.012) this.endIntro();
     if (this.phase === "fala" && this.phaseT > Math.max(1.6, this.speechText.length * 0.055 + 1.2)) this.startAttack();
@@ -763,6 +1087,8 @@ export class BattleEngine {
       this.ending -= dt;
       if (this.ending <= 0) {
         this.bullets = [];
+        this.cannons = [];
+        this.platforms = [];
         this.endTurn();
       }
     } else if (this.phase === "ataque") {
@@ -980,7 +1306,7 @@ export class BattleEngine {
     const ox = s.x;
     const oy = s.y;
 
-    if (this.mode === "vermelha") {
+    if (this.mode === "vermelha" || this.mode === "amarela") {
       const len = Math.hypot(inp.x, inp.y);
       const m = len > 1 ? 1 / len : 1;
       const f = sp * (inp.slow ? 0.5 : 1);
@@ -1002,7 +1328,8 @@ export class BattleEngine {
       const groundP = vertical ? (sign > 0 ? b.b - half : b.t + half) : sign > 0 ? b.r - half : b.l + half;
       const ceilP = vertical ? (sign > 0 ? b.t + half : b.b - half) : sign > 0 ? b.l + half : b.r - half;
       let p = vertical ? s.y : s.x;
-      const ground = (p - groundP) * sign >= -0.5;
+      const prevP = p;
+      const ground = (p - groundP) * sign >= -0.5 || this.onPlat;
       if (ground && away) s.vy = -270;
       if (!away && s.vy < -70) s.vy = -70;
       s.vy += 720 * dt;
@@ -1015,6 +1342,20 @@ export class BattleEngine {
       if ((p - ceilP) * sign <= 0) {
         p = ceilP;
         s.vy = Math.max(0, s.vy);
+      }
+      // plataformas (só com gravidade para baixo)
+      this.onPlat = false;
+      if (gd === 0 && s.vy >= 0) {
+        for (const pl of this.platforms) {
+          const top = pl.y - 3;
+          if (prevP + half <= top + 2 && p + half >= top && Math.abs(s.x - pl.x) <= pl.w / 2 + half * 0.4) {
+            p = top - half;
+            s.vy = 0;
+            s.x += pl.vx * dt;
+            this.onPlat = true;
+            break;
+          }
+        }
       }
       if (vertical) s.y = p;
       else s.x = p;
@@ -1034,6 +1375,23 @@ export class BattleEngine {
       s.y += (ly - s.y) * (1 - Math.pow(0.000001, dt));
     }
 
+    // alma amarela: atira para cima
+    this.shotCd -= dt;
+    if (this.mode === "amarela" && (inp.action || !!this.pointer) && this.shotCd <= 0 && this.phase === "ataque") {
+      this.shots.push({ x: s.x, y: s.y - 10 });
+      this.shotCd = 0.18;
+      this.sfx.play("texto");
+    }
+    // vórtice puxando a alma
+    if (this.pull && (this.mode === "vermelha" || this.mode === "amarela")) {
+      const dx = this.pull.x - s.x;
+      const dy = this.pull.y - s.y;
+      const d = Math.hypot(dx, dy);
+      if (d > 2) {
+        s.x += (dx / d) * this.pull.f * dt;
+        s.y += (dy / d) * this.pull.f * dt;
+      }
+    }
     s.x = clamp(s.x, b.l + half, b.r - half);
     s.y = clamp(s.y, b.t + half, b.b - half);
     s.moving = Math.hypot(s.x - ox, s.y - oy) > 0.3;
@@ -1043,8 +1401,8 @@ export class BattleEngine {
     return this.box.t + (this.box.h * (i + 1)) / 4;
   }
 
-  spawn(a: Running, p: Partial<Bullet> & { x: number; y: number; vx: number; vy: number; r: number }) {
-    this.bullets.push({
+  spawn(a: Running, p: Partial<Bullet> & { x: number; y: number; vx: number; vy: number; r: number }): Bullet {
+    const u: Bullet = {
       ang: Math.atan2(p.vy, p.vx),
       spin: a.cfg.forma === "estrela" ? 4 : 0,
       face: false,
@@ -1057,7 +1415,9 @@ export class BattleEngine {
       fadeAt: 0,
       bounce: false,
       ...p,
-    });
+    };
+    this.bullets.push(u);
+    return u;
   }
 
   spawnRect(a: Running, x: number, y: number, w: number, h: number, vx: number, vy: number, plain = false) {
@@ -1072,8 +1432,18 @@ export class BattleEngine {
     });
   }
 
-  spawnBeam(a: Running, x: number, y: number, w: number, h: number, warn: number, ang = 0) {
-    this.spawn(a, {
+  spawnBeam(
+    a: Running,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    warn: number,
+    ang = 0,
+    look: BeamLook = "feixe",
+    active = 0.45,
+  ): Bullet {
+    return this.spawn(a, {
       x, y, vx: 0, vy: 0,
       r: Math.max(w, h) / 2,
       rw: w,
@@ -1081,13 +1451,156 @@ export class BattleEngine {
       ang,
       spin: 0,
       warn,
-      fadeAt: warn + 0.45,
-      maxLife: warn + 0.7,
+      fadeAt: warn + active,
+      maxLife: warn + active + 0.25,
       beam: true,
+      look,
     });
   }
 
+  /** Canhão visível: entra, mira, carrega, dispara um feixe e sai. */
+  spawnCannon(a: Running, o: { tx: number; ty: number; fixedAng?: number; enter?: number; charge: number; width: number }) {
+    const b = this.box;
+    const out = Math.atan2(o.ty - b.cy, o.tx - b.cx);
+    const sx = o.tx + Math.cos(out) * 160;
+    const sy = o.ty + Math.sin(out) * 160;
+    this.cannons.push({
+      x: sx, y: sy, sx, sy, tx: o.tx, ty: o.ty,
+      ang: o.fixedAng ?? Math.atan2(this.soul.y - o.ty, this.soul.x - o.tx),
+      fixedAng: o.fixedAng,
+      t: 0,
+      enter: o.enter ?? 0.3,
+      charge: Math.max(0.3, o.charge),
+      fire: 0.45,
+      width: o.width,
+      fired: false,
+      run: a,
+      size: Math.max(0.8, o.width / 24),
+    });
+    if (this.cannons.length < 3) this.sfx.fx("carga");
+  }
+
+  updateCannons(dt: number) {
+    for (const c of this.cannons) {
+      c.t += dt;
+      const e = Math.min(1, c.t / c.enter);
+      const ease = 1 - Math.pow(1 - e, 3);
+      const aimUntil = c.enter + c.charge - 0.28;
+      if (c.fixedAng === undefined && c.t < aimUntil)
+        c.ang = Math.atan2(this.soul.y - c.y, this.soul.x - c.x);
+      else if (c.fixedAng !== undefined) c.ang = c.fixedAng;
+      const fireAt = c.enter + c.charge;
+      if (c.t < fireAt) {
+        c.x = c.sx + (c.tx - c.sx) * ease;
+        c.y = c.sy + (c.ty - c.sy) * ease;
+      } else {
+        if (!c.fired) {
+          c.fired = true;
+          const len = 1000;
+          const ox = c.tx + Math.cos(c.ang) * 22 * c.size;
+          const oy = c.ty + Math.sin(c.ang) * 22 * c.size;
+          this.spawnBeam(c.run, ox + Math.cos(c.ang) * (len / 2), oy + Math.sin(c.ang) * (len / 2), len, c.width, 0, c.ang, "feixe", c.fire);
+          this.sfx.fx("disparo");
+          if (this.cfg.mecanica.efeitos) {
+            this.shake = Math.max(this.shake, 0.12);
+            this.flash = Math.min(0.5, this.flash + 0.18);
+            this.chroma = 0.3;
+          }
+        }
+        // recuo durante o disparo e saída para trás depois
+        const k = c.t - fireAt;
+        const back = k < c.fire ? 6 * c.size : 6 * c.size + (k - c.fire) * 420;
+        c.x = c.tx - Math.cos(c.ang) * back;
+        c.y = c.ty - Math.sin(c.ang) * back;
+      }
+    }
+    this.cannons = this.cannons.filter((c) => c.t < c.enter + c.charge + c.fire + 0.6);
+  }
+
+  drawCannon(c: Cannon) {
+    const g = this.ctx;
+    const fireAt = c.enter + c.charge;
+    const charging = c.t >= c.enter * 0.6 && c.t < fireAt;
+    const prog = clamp((c.t - c.enter) / c.charge, 0, 1);
+    const open = c.t >= fireAt ? 1 : prog * 0.5;
+    const col = KIND_COLOR[c.run.cfg.tipoDano] ?? (c.run.cfg.cor || "#ffffff");
+    const out = c.t > fireAt + c.fire ? clamp(1 - (c.t - fireAt - c.fire) / 0.6, 0, 1) : 1;
+    g.save();
+    g.globalAlpha = out;
+    // linha de mira enquanto carrega
+    if (charging && Math.floor(c.t * 14) % 2 === 0) {
+      g.save();
+      g.translate(c.x, c.y);
+      g.rotate(c.ang);
+      g.strokeStyle = col;
+      g.globalAlpha = 0.25 + prog * 0.45;
+      g.lineWidth = 1 + prog * 2;
+      g.setLineDash([10, 6]);
+      g.beginPath();
+      g.moveTo(22 * c.size, 0);
+      g.lineTo(900, 0);
+      g.stroke();
+      g.restore();
+    }
+    g.translate(c.x, c.y);
+    g.rotate(c.ang);
+    g.scale(c.size, c.size);
+    g.lineJoin = "round";
+    g.lineWidth = 2.5;
+    g.strokeStyle = "#000";
+    g.fillStyle = "#f4f4f4";
+    // corpo: losango alongado com aletas atrás
+    g.beginPath();
+    g.moveTo(-20, 0);
+    g.lineTo(-10, -13);
+    g.lineTo(8, -11);
+    g.lineTo(14, 0);
+    g.lineTo(8, 11);
+    g.lineTo(-10, 13);
+    g.closePath();
+    g.fill();
+    g.stroke();
+    g.beginPath();
+    g.moveTo(-14, -9);
+    g.lineTo(-26, -17);
+    g.lineTo(-20, -4);
+    g.moveTo(-14, 9);
+    g.lineTo(-26, 17);
+    g.lineTo(-20, 4);
+    g.fill();
+    g.stroke();
+    // garras da frente (abrem para disparar)
+    for (const sgn of [-1, 1]) {
+      g.save();
+      g.rotate(sgn * open * 0.45);
+      g.beginPath();
+      g.moveTo(6, sgn * 4);
+      g.lineTo(26, sgn * 9);
+      g.lineTo(22, sgn * 14);
+      g.lineTo(4, sgn * 12);
+      g.closePath();
+      g.fill();
+      g.stroke();
+      g.restore();
+    }
+    // núcleo brilhando
+    g.shadowColor = col;
+    g.shadowBlur = 6 + prog * 14;
+    g.fillStyle = col;
+    g.beginPath();
+    g.arc(0, 0, 4 + prog * 2.5, 0, Math.PI * 2);
+    g.fill();
+    g.restore();
+  }
+
   updateBullets(dt: number) {
+    this.updateCannons(dt);
+    for (const pl of this.platforms) pl.x += pl.vx * dt;
+    this.platforms = this.platforms.filter((pl) => pl.x > this.box.l - 120 && pl.x < this.box.r + 120);
+    if (this.ending > 0) this.cannons = [];
+    // tiros da alma amarela
+    for (const sh of this.shots) sh.y -= 430 * dt;
+    this.shots = this.shots.filter((sh) => sh.y > this.box.t - 10);
     const b = this.box;
     const s = this.soul;
     const hr = 4.5 * this.soulScale;
@@ -1100,6 +1613,17 @@ export class BattleEngine {
       u.y += u.vy * dt;
       u.ang += u.spin * dt;
       if (u.face) u.ang = Math.atan2(u.vy, u.vx);
+      if (u.flip && !u.flip.done && Math.hypot(u.x - u.flip.cx, u.y - u.flip.cy) < 105) {
+        u.flip.done = true;
+        u.x = 2 * u.flip.cx - u.x;
+        u.y = 2 * u.flip.cy - u.y;
+        u.vx = -u.vx;
+        u.vy = -u.vy;
+      }
+      if (u.pivot) {
+        u.x = u.pivot.x + Math.cos(u.ang) * (u.pivot.len / 2);
+        u.y = u.pivot.y + Math.sin(u.ang) * (u.pivot.len / 2);
+      }
       if (u.bounce) {
         if (u.x < b.l + u.r) { u.x = b.l + u.r; u.vx = Math.abs(u.vx); }
         if (u.x > b.r - u.r) { u.x = b.r - u.r; u.vx = -Math.abs(u.vx); }
@@ -1121,7 +1645,18 @@ export class BattleEngine {
       if (u.x < -300 || u.x > W + 300 || u.y < -300 || u.y > H + 300) u.dead = true;
       if (u.dead || !this.alive || u.warn > 0 || this.ending > 0) continue;
       if (u.beam && u.life > u.fadeAt) continue;
+      if (u.beam && u.look === "feixe" && -u.warn < 0.04) continue; // o feixe ainda está abrindo
 
+      // tiros da alma amarela destroem projéteis redondos
+      if (this.shots.length && !u.beam && u.rw === undefined) {
+        const hit = this.shots.findIndex((sh) => Math.abs(sh.x - u.x) < u.r + 3 && Math.abs(sh.y - u.y) < u.r + 6);
+        if (hit >= 0) {
+          this.shots.splice(hit, 1);
+          u.dead = true;
+          this.sfx.play("escudo");
+          continue;
+        }
+      }
       // escudo da alma verde
       if (this.mode === "verde" && !u.beam) {
         const dirs = [[0, -1], [1, 0], [0, 1], [-1, 0]];
@@ -1149,9 +1684,17 @@ export class BattleEngine {
       if (u.kind === "azul" && !s.moving) continue;
       if (u.kind === "laranja" && s.moving) continue;
       if (this.invuln > 0) continue;
-      this.hp = Math.max(0, this.hp - u.dano);
-      this.invuln = this.cfg.mecanica.invencivel;
-      this.shake = 0.2;
+      if (this.cfg.mecanica.karma) {
+        // karma: 1 de dano por toque, quase sem invencibilidade, e o resto vira veneno
+        this.hp = Math.max(0, this.hp - 1);
+        this.kr = Math.min(40, this.kr + Math.max(1, u.dano));
+        this.invuln = 0.05;
+        this.shake = Math.max(this.shake, 0.08);
+      } else {
+        this.hp = Math.max(0, this.hp - u.dano);
+        this.invuln = this.cfg.mecanica.invencivel;
+        this.shake = 0.2;
+      }
       this.sfx.play("dano");
       this.opt.onHp?.(this.hp);
       if (this.hp <= 0) {
@@ -1452,13 +1995,16 @@ export class BattleEngine {
     g.imageSmoothingEnabled = false;
     g.clearRect(0, 0, W, H);
 
-    if (this.shake > 0) g.translate((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6);
+    const sc = this.scene;
+    const quake = (this.shake > 0 ? 6 : 0) + (this.phase === "ataque" ? sc.tremor * 5 : sc.tremor * 2);
+    if (quake > 0) g.translate((Math.random() - 0.5) * quake, (Math.random() - 0.5) * quake);
+    this.drawScene();
 
     const b = this.box;
     // caixa
-    g.fillStyle = "#000";
+    g.fillStyle = sc.caixaCor;
     g.fillRect(b.l, b.t, b.w, b.h);
-    g.strokeStyle = "#fff";
+    g.strokeStyle = sc.bordaCor;
     g.lineWidth = 4;
     g.strokeRect(b.l - 2, b.t - 2, b.w + 4, b.h + 4);
 
@@ -1500,19 +2046,52 @@ export class BattleEngine {
         g.clip();
       }
       const fadeOut = this.ending > 0 ? Math.max(0, this.ending / 0.4) : 1;
+      const big = (u: Bullet) => u.beam && (u.look === "feixe" || u.look === "corte");
       for (const u of this.bullets) {
+        if (big(u)) continue;
         g.globalAlpha = Math.min(1, u.life / 0.12) * fadeOut;
         this.drawBullet(u);
       }
       g.globalAlpha = 1;
+      // plataformas
+      for (const pl of this.platforms) {
+        g.fillStyle = "#1f8f3a";
+        g.fillRect(pl.x - pl.w / 2, pl.y - 3, pl.w, 6);
+        g.fillStyle = "#4dff7a";
+        g.fillRect(pl.x - pl.w / 2, pl.y - 3, pl.w, 2);
+      }
       g.restore();
+      // feixes e cortes atravessam a tela inteira
+      for (const u of this.bullets) {
+        if (!big(u)) continue;
+        g.globalAlpha = fadeOut;
+        this.drawBullet(u);
+      }
+      g.globalAlpha = 1;
+      for (const c of this.cannons) this.drawCannon(c);
 
+      g.fillStyle = "#ffe14a";
+      for (const sh of this.shots) g.fillRect(sh.x - 1.5, sh.y - 5, 3, 9);
       for (const o of this.others.values()) this.drawOther(o);
       if (!this.opt.spectator) this.drawSoul();
     }
 
+    if (this.flash > 0) {
+      g.setTransform(k, 0, 0, k, 0, 0);
+      g.fillStyle = `rgba(255,255,255,${this.flash})`;
+      g.fillRect(0, 0, W, H);
+    }
     this.drawHud();
     g.setTransform(1, 0, 0, 1, 0, 0);
+    // aberração cromática nas fases intensas e nos disparos
+    const intense = this.cfg.mecanica.efeitos && this.phase === "ataque" && (this.chroma > 0 || this.cfg.mecanica.intensidade >= 1.4);
+    const filter = intense
+      ? "drop-shadow(2px 0 0 rgba(255,0,70,0.55)) drop-shadow(-2px 0 0 rgba(0,220,255,0.55))"
+      : "";
+    if (filter !== this.lastFilter) {
+      this.lastFilter = filter;
+      this.canvas.style.filter = filter;
+    }
   }
 
   drawSub() {
@@ -1567,7 +2146,79 @@ export class BattleEngine {
   }
 
   bulletColor(u: Bullet) {
-    return KIND_COLOR[u.kind] ?? u.style.cor;
+    return KIND_COLOR[u.kind] ?? u.cor ?? u.style.cor;
+  }
+
+  /** Fundo animado do cenário (desenhado antes da caixa). */
+  drawScene() {
+    const g = this.ctx;
+    const sc = this.scene;
+    const t = this.sceneT;
+    if (!this.cfg.monstro.fundo) {
+      g.fillStyle = sc.fundoCor;
+      g.fillRect(-20, -20, W + 40, H + 40);
+    }
+    const col = sc.corEfeito;
+    g.save();
+    if (sc.efeito === "pulso") {
+      const a = 0.16 + 0.12 * Math.sin(t * 2.4);
+      const grd = g.createRadialGradient(W / 2, BOX_CY, 20, W / 2, BOX_CY, 360);
+      grd.addColorStop(0, hexA(col, a));
+      grd.addColorStop(1, hexA(col, 0));
+      g.fillStyle = grd;
+      g.fillRect(0, 0, W, H);
+    } else if (sc.efeito === "grade") {
+      g.strokeStyle = hexA(col, 0.22);
+      g.lineWidth = 1;
+      for (let x = 0; x <= W; x += 40) {
+        g.beginPath();
+        g.moveTo(x, 0);
+        g.lineTo(x, H);
+        g.stroke();
+      }
+      for (let i = 0; i < 14; i++) {
+        const y = (i * 36 + t * 28) % (H + 36);
+        g.beginPath();
+        g.moveTo(0, y);
+        g.lineTo(W, y);
+        g.stroke();
+      }
+    } else if (sc.efeito === "estatica") {
+      for (let i = 0; i < 160; i++) {
+        g.fillStyle = hexA(col, Math.random() * 0.35);
+        g.fillRect(Math.random() * W, Math.random() * H, 2 + Math.random() * 3, 1);
+      }
+      const band = (t * 120) % (H + 40);
+      g.fillStyle = hexA(col, 0.06);
+      g.fillRect(0, band - 20, W, 14);
+    } else if (sc.efeito !== "nenhum") {
+      if (!this.motes.length) {
+        for (let i = 0; i < 60; i++)
+          this.motes.push({ x: Math.random() * W, y: Math.random() * H, v: 10 + Math.random() * 40, s: 1 + Math.random() * 2.5, p: Math.random() * 6 });
+      }
+      for (const m of this.motes) {
+        if (sc.efeito === "estrelas") {
+          g.fillStyle = hexA(col, 0.25 + 0.5 * Math.abs(Math.sin(t * 1.5 + m.p)));
+          g.fillRect(m.x, m.y * 0.85, m.s, m.s);
+          continue;
+        }
+        const speed = sc.efeito === "chamas" ? m.v * 1.8 : m.v;
+        const y = (m.y - t * speed) % H;
+        const yy = y < 0 ? y + H : y;
+        const wob = Math.sin(t * 2 + m.p) * (sc.efeito === "chamas" ? 6 : 3);
+        const alpha = sc.efeito === "chamas" ? (yy / H) * 0.8 : 0.35;
+        g.fillStyle = hexA(col, alpha);
+        g.fillRect(m.x + wob, yy, m.s, sc.efeito === "chamas" ? m.s * 2 : m.s);
+      }
+    }
+    if (sc.escuro > 0) {
+      const grd = g.createRadialGradient(W / 2, H / 2, 120, W / 2, H / 2, 420);
+      grd.addColorStop(0, "rgba(0,0,0,0)");
+      grd.addColorStop(1, `rgba(0,0,0,${Math.min(0.95, sc.escuro)})`);
+      g.fillStyle = grd;
+      g.fillRect(0, 0, W, H);
+    }
+    g.restore();
   }
 
   drawBullet(u: Bullet) {
@@ -1578,22 +2229,60 @@ export class BattleEngine {
 
     if (u.beam) {
       g.rotate(u.ang);
+      const rw = u.rw!;
+      const rh = u.rh!;
       if (u.warn > 0) {
-        if (Math.floor(u.life * 12) % 2 === 0) {
-          g.strokeStyle = col;
+        if (u.warnRed) {
+          g.strokeStyle = `rgba(255,40,40,${0.45 + 0.4 * (Math.floor(u.life * 16) % 2)})`;
+          g.lineWidth = 2;
+          g.beginPath();
+          g.moveTo(-rw / 2, 0);
+          g.lineTo(rw / 2, 0);
+          g.stroke();
+        } else if (Math.floor(u.life * 12) % 2 === 0) {
+          g.strokeStyle = u.look === "feixe" ? col : "rgba(255,255,255,0.8)";
           g.lineWidth = 2;
           g.setLineDash([6, 4]);
-          g.strokeRect(-u.rw! / 2, -u.rh! / 2, u.rw!, u.rh!);
+          g.strokeRect(-rw / 2, -rh / 2, rw, rh);
         }
       } else {
+        const age = -u.warn;
         const fade = u.life > u.fadeAt ? 1 - (u.life - u.fadeAt) / 0.25 : 1;
-        g.globalAlpha = Math.max(0, fade);
-        g.fillStyle = col;
-        g.fillRect(-u.rw! / 2, -u.rh! / 2, u.rw!, u.rh!);
-        g.fillStyle = "#fff";
-        const iw = u.rw! > u.rh! ? u.rw! : u.rw! * 0.4;
-        const ih = u.rw! > u.rh! ? u.rh! * 0.4 : u.rh!;
-        g.fillRect(-iw / 2, -ih / 2, iw, ih);
+        g.globalAlpha *= Math.max(0, fade);
+        if (u.look === "osso") {
+          g.fillStyle = col;
+          drawBone(g, rw, rh);
+        } else if (u.look === "espinhos") {
+          g.fillStyle = col;
+          const along = rw >= rh;
+          const len = along ? rw : rh;
+          const th = along ? rh : rw;
+          const rise = Math.min(1, age / 0.08);
+          for (let p = -len / 2 + 6; p < len / 2; p += 11) {
+            g.save();
+            if (along) g.translate(p, (th * (1 - rise)) / 2);
+            else g.translate((th * (1 - rise)) / 2, p);
+            drawBone(g, along ? 7 : th * rise, along ? th * rise : 7);
+            g.restore();
+          }
+        } else if (u.look === "corte") {
+          g.shadowColor = "#ff4040";
+          g.shadowBlur = 10;
+          g.fillStyle = "#ffffff";
+          g.fillRect(-rw / 2, -rh / 2, rw, rh);
+        } else {
+          // feixe: abre rápido, pulsa e fecha
+          const open = Math.min(1, age / 0.08);
+          const pulse = 1 + Math.sin(age * 40) * 0.06;
+          const hh = rh * open * pulse * Math.max(0.2, fade);
+          g.shadowColor = col;
+          g.shadowBlur = 16;
+          g.fillStyle = col;
+          g.fillRect(-rw / 2, -hh / 2, rw, hh);
+          g.shadowBlur = 0;
+          g.fillStyle = "#fff";
+          g.fillRect(-rw / 2, -hh * 0.3, rw, hh * 0.6);
+        }
       }
       g.restore();
       return;
@@ -1625,14 +2314,10 @@ export class BattleEngine {
         break;
       }
       case "emoji": {
-        if (isRect) {
-          g.fillRect(-rw / 2, -rh / 2, rw, rh);
-        } else {
-          g.font = `${r * 2.4}px sans-serif`;
-          g.textAlign = "center";
-          g.textBaseline = "middle";
-          g.fillText(u.style.emoji, 0, 0);
-        }
+        // emoji pré-desenhado em cache (desenhar texto a cada quadro é caro)
+        const px = isRect ? Math.max(rw, rh) : r * 2.4;
+        const spr = emojiSprite(u.style.emoji, col, px);
+        g.drawImage(spr, -spr.width / 2, -spr.height / 2);
         break;
       }
       case "osso":
@@ -1741,7 +2426,13 @@ export class BattleEngine {
     } else {
       const img = loadImage(this.cfg.alma.imagem);
       if (img && img.complete && img.naturalWidth) g.drawImage(img, s.x - size / 2, s.y - size / 2, size, size);
-      else g.drawImage(heartSprite(this.soulColor), s.x - size / 2, s.y - size * 0.45, size, size * (10 / 11));
+      else if (this.mode === "amarela") {
+        g.save();
+        g.translate(s.x, s.y);
+        g.scale(1, -1);
+        g.drawImage(heartSprite(this.soulColor), -size / 2, -size * 0.45, size, size * (10 / 11));
+        g.restore();
+      } else g.drawImage(heartSprite(this.soulColor), s.x - size / 2, s.y - size * 0.45, size, size * (10 / 11));
     }
     if (this.mode === "verde") {
       const dirs = [[0, -1], [1, 0], [0, 1], [-1, 0]];
@@ -1802,10 +2493,19 @@ export class BattleEngine {
       g.fillStyle = "#c00";
       g.fillRect(295, 395, bw, 20);
       g.fillStyle = "#ff0";
-      g.fillRect(295, 395, bw * Math.max(0, Math.min(1, this.displayHp / max)), 20);
-      g.fillStyle = "#fff";
+      const hpW = bw * Math.max(0, Math.min(1, this.displayHp / max));
+      g.fillRect(295, 395, hpW, 20);
+      if (this.cfg.mecanica.karma) {
+        const krW = Math.min(hpW, bw * (this.kr / max));
+        g.fillStyle = "#ff2bd6";
+        g.fillRect(295 + hpW - krW, 395, krW, 20);
+        g.fillStyle = "#fff";
+        g.font = `16px ${FONT}`;
+        g.fillText("KR", 300 + bw, 405);
+      }
+      g.fillStyle = this.kr > 0 ? "#ff2bd6" : "#fff";
       g.font = `24px ${FONT}`;
-      g.fillText(`${this.hp} / ${max}`, 305 + bw, 405);
+      g.fillText(`${this.hp} / ${max}`, (this.cfg.mecanica.karma ? 324 : 305) + bw, 405);
     } else {
       g.font = `20px ${FONT}`;
       g.fillStyle = "#aaa";
@@ -1879,6 +2579,12 @@ function drawBone(g: CanvasRenderingContext2D, w: number, h: number) {
     g.fill();
   }
   g.restore();
+}
+
+/** "#rrggbb" + alfa -> rgba() */
+function hexA(hex: string, a: number) {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(hex) ?? ["", "ff", "ff", "ff"];
+  return `rgba(${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)},${Math.max(0, Math.min(1, a))})`;
 }
 
 function wrapText(g: CanvasRenderingContext2D, text: string, maxW: number) {
