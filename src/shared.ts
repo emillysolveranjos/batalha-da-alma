@@ -124,7 +124,8 @@ export type AttackType =
   | "golpecor"
   | "ondas"
   | "raios"
-  | "roda";
+  | "roda"
+  | "lanterna";
 
 export interface AttackConfig {
   tipo: AttackType;
@@ -141,6 +142,8 @@ export interface AttackConfig {
   fala: string; // fala opcional do monstro durante este ataque
   caixaL: number; // largura da caixa (0 = padrão)
   caixaA: number; // altura da caixa (0 = padrão)
+  modo?: SoulMode | ""; // troca a alma enquanto este ataque roda ("" = a da batalha)
+  inicio?: number; // no modo simultâneo: segundos até este ataque começar (0 = já no início)
 }
 
 export type SceneEffect = "nenhum" | "pulso" | "particulas" | "estrelas" | "chamas" | "grade" | "estatica";
@@ -317,6 +320,7 @@ export const ATTACK_INFO: Record<AttackType, { nome: string; desc: string }> = {
   arena: { nome: "Arena sem caixa", desc: "A caixa vira a tela inteira. Combine com galáxia, constelação ou teia." },
   galaxia: { nome: "Galáxia de estrelas", desc: "Estrelas grandes saem do centro em braços de espiral girando." },
   constelacao: { nome: "Constelação", desc: "Uma grade de estrelas desce rolando pela tela." },
+  lanterna: { nome: "Escuridão (lanterna)", desc: "Tudo escurece e só se enxerga perto da alma. Combine com outros ataques (modo simultâneo)." },
   deriva: { nome: "Caixa em movimento", desc: "A caixa desliza pela tela. Combine com outros ataques (modo simultâneo)." },
   maos: { nome: "Mãos de fogo", desc: "Mãos varrem o alto da caixa (ou descem pelos lados) soltando bolas de fogo." },
   torretas: { nome: "Torretas", desc: "Bonecos ficam presos em volta da caixa e atiram na alma, um de cada vez." },

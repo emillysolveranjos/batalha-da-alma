@@ -672,17 +672,18 @@ const CHOREO: Record<
     g.pull = { x: b.cx, y: b.cy, f: 50 * S, t: 0.2 };
     every(a, "s", 0.13 / D, dt, () => {
       for (let k = 0; k < 2; k++) {
+        // espiral de verdade: o raio encolhe enquanto gira, então tudo converge no centro (para onde a alma é puxada)
         const th = a.t * 1.8 + k * Math.PI;
         const R = 230;
-        const inward = 75 * S;
-        const tang = 95 * S;
+        const T = R / (75 * S);
         g.spawn(a, {
           x: b.cx + Math.cos(th) * R,
           y: b.cy + Math.sin(th) * R,
-          vx: -Math.cos(th) * inward - Math.sin(th) * tang,
-          vy: -Math.sin(th) * inward + Math.cos(th) * tang,
+          vx: 0,
+          vy: 0,
           r: 6 * Z,
-          maxLife: 4.5 / S,
+          orbit: { cx: b.cx, cy: b.cy, r: R, w: 1.3 * S, until: T + 9, sp: 0, track: 0, dr: R / T },
+          maxLife: T,
         });
       }
     });
@@ -966,6 +967,11 @@ const KAIZO: Record<string, Pattern> = {
     g.arenaT = 0.2;
   },
 
+  lanterna(a, _dt, g) {
+    g.lanternT = 0.2;
+    g.lanternR = 62 * Math.max(0.4, a.cfg.tamanho);
+  },
+
   galaxia(a, dt, g) {
     const { S, D, Z } = params(a);
     every(a, "s", 0.3 / D, dt, () => {
@@ -1239,10 +1245,12 @@ const VIDEO: Record<string, Pattern> = {
     const { S, D, Z } = params(a);
     const b = g.box;
     const cols = Math.max(1, Math.round(b.w / 110));
-    const amp = (b.w / cols) * 0.4;
-    every(a, "s", 0.07, dt, () => {
+    const cw = b.w / cols;
+    const amp = cw * 0.5; // as colunas vizinhas se encostam: não sobra corredor parado
+    const drift = Math.sin(a.t * 0.55 * S) * cw * 0.35; // e os losangos andam de lado
+    every(a, "s", 0.09 / D, dt, () => {
       for (let c = 0; c < cols; c++) {
-        const x0 = b.l + (c + 0.5) * (b.w / cols);
+        const x0 = b.l + (c + 0.5) * cw + drift;
         for (const ph of [0, Math.PI])
           g.spawn(a, { x: x0, y: b.b + 10, vx: 0, vy: -85 * S, r: 5 * Z, wave: { x0, amp, w: 2.3 * S, ph: ph + a.t * 0.8 * D }, maxLife: (b.h + 30) / (85 * S) });
       }
@@ -1256,7 +1264,12 @@ const VIDEO: Record<string, Pattern> = {
       const n = Math.max(3, Math.round(b.w / 45));
       const set = (a.data.k = (a.data.k ?? 0) + 1) % 2;
       const cw = b.w / n;
-      for (let i = set; i < n; i += 2) g.spawnBeam(a, b.l + (i + 0.5) * cw, b.cy, cw * 0.7 * Z, b.h + 20, 0.8 / Math.sqrt(S), 0, "raio", 0.35);
+      // colunas alternadas, mas a coluna da alma às vezes também cai: ficar parado não é seguro
+      const soulCol = Math.floor((g.soul.x - b.l) / cw);
+      for (let i = 0; i < n; i++) {
+        if (i % 2 !== set && !(i === soulCol && a.rng() < 0.5)) continue;
+        g.spawnBeam(a, b.l + (i + 0.5) * cw, b.cy, cw * Z, b.h + 20, 0.8 / Math.sqrt(S), 0, "raio", 0.35);
+      }
     });
   },
 
@@ -1351,6 +1364,9 @@ export class BattleEngine {
   pull: { x: number; y: number; f: number; t: number } | null = null;
   doubleT = 0; // visão dupla ativa
   arenaT = 0; // arena sem caixa ativa
+  lanternT = 0; // escuridão: só se vê perto da alma
+  lanternR = 62;
+  lanternA = 0; // opacidade atual da escuridão (entra e sai suave)
   arenaOn = false;
   shots: { x: number; y: number }[] = [];
   shotCd = 0;
@@ -1406,8 +1422,32 @@ export class BattleEngine {
   modeOverride: SoulMode | null = null; // a pancada transforma a alma em azul até o fim do turno
   gravDir = 0; // 0 baixo, 1 esquerda, 2 cima, 3 direita
 
+  attackMode: SoulMode | null = null; // alma escolhida pelo ataque que está rodando
+
   get mode(): SoulMode {
-    return this.modeOverride ?? this.cfg.alma.modo;
+    return this.modeOverride ?? this.attackMode ?? this.cfg.alma.modo;
+  }
+
+  /** Alma pedida pelos ataques ativos agora (o primeiro que pedir uma). */
+  wantedMode(t: number): SoulMode | null {
+    for (const it of this.plan) if (t >= it.start && t < it.end && it.cfg.modo) return it.cfg.modo;
+    return null;
+  }
+
+  /** Troca de alma no meio do turno: reposiciona a alma para a nova regra. */
+  enterMode() {
+    const s = this.soul;
+    const b = this.box;
+    s.vy = 0;
+    this.gravDir = 0;
+    if (this.mode === "roxa") {
+      s.line = Math.floor(this.nLines / 2);
+    } else if (this.mode === "verde") {
+      s.x = b.cx;
+      s.y = b.cy;
+    }
+    if (this.cfg.mecanica.efeitos) this.flash = Math.max(this.flash, 0.25);
+    this.sfx.play("selecionar");
   }
 
   /** Pancada: gravidade para a direção dada e a alma é arremessada contra a parede. */
@@ -1442,14 +1482,16 @@ export class BattleEngine {
     for (const it of list) {
       const dur = Math.max(1, it.cfg.duracao);
       if (this.cfg.mecanica.ordem === "simultaneo") {
-        this.plan.push({ ...it, start: 0, end: dur });
-        t = Math.max(t, dur);
+        const start = Math.max(0, it.cfg.inicio ?? 0);
+        this.plan.push({ ...it, start, end: start + dur });
+        t = Math.max(t, start + dur);
       } else {
         this.plan.push({ ...it, start: t, end: t + dur });
         t += dur;
       }
     }
     this.totalAttack = t;
+    this.attackMode = this.wantedMode(0);
   }
 
   // ----- ciclo -----
@@ -1578,6 +1620,9 @@ export class BattleEngine {
     if (arena) this.boxOffTarget = { x: 0, y: H / 2 - BOX_CY };
     this.arenaT = Math.max(0, this.arenaT - dt);
     this.doubleT = Math.max(0, this.doubleT - dt);
+    this.lanternT = Math.max(0, this.lanternT - dt);
+    const lanternOn = this.lanternT > 0 && this.phase === "ataque" && this.ending <= 0;
+    this.lanternA += ((lanternOn ? 1 : 0) - this.lanternA) * (1 - Math.pow(0.004, dt));
     const ko = 1 - Math.pow(0.02, dt);
     this.boxOff.x += (this.boxOffTarget.x - this.boxOff.x) * ko;
     this.boxOff.y += (this.boxOffTarget.y - this.boxOff.y) * ko;
@@ -1626,6 +1671,13 @@ export class BattleEngine {
       }
     } else if (this.phase === "ataque") {
       this.attackT += dt;
+      const want = this.wantedMode(this.attackT);
+      if (want !== this.attackMode && this.attackT < this.totalAttack) {
+        const before = this.mode;
+        this.attackMode = want;
+        if (want) this.modeOverride = null; // ataque com alma própria desfaz a pancada
+        if (this.mode !== before) this.enterMode();
+      }
       for (const it of this.plan) {
         if (this.attackT >= it.start && this.attackT < it.end) {
           let a = this.running.get(it.idx * 1000 + it.start);
@@ -2695,6 +2747,28 @@ export class BattleEngine {
 
       g.fillStyle = "#ffe14a";
       for (const sh of this.shots) g.fillRect(sh.x - 1.5, sh.y - 5, 3, 9);
+      if (this.lanternA > 0.01) {
+        // escuridão com um círculo de luz em volta da alma (o espectador vê tudo mais claro)
+        const s = this.soul;
+        const r = this.lanternR;
+        const dark = (this.opt.spectator ? 0.55 : 0.96) * this.lanternA;
+        const grd = g.createRadialGradient(s.x, s.y, r * 0.45, s.x, s.y, r);
+        grd.addColorStop(0, "rgba(0,0,0,0)");
+        grd.addColorStop(1, `rgba(0,0,0,${dark})`);
+        g.fillStyle = grd;
+        g.fillRect(-20, -20, W + 40, H + 40);
+        g.strokeStyle = `rgba(255,255,255,${0.12 * this.lanternA})`;
+        g.lineWidth = 1;
+        g.beginPath();
+        g.arc(s.x, s.y, r * 0.95, 0, Math.PI * 2);
+        g.stroke();
+        // a borda da caixa continua aparecendo de leve, para a alma saber onde está
+        if (!this.arenaOn) {
+          g.strokeStyle = `rgba(255,255,255,${0.3 * this.lanternA})`;
+          g.lineWidth = 2;
+          g.strokeRect(b.l, b.t, b.w, b.h);
+        }
+      }
       for (const o of this.others.values()) this.drawOther(o);
       if (!this.opt.spectator) this.drawSoul();
     }

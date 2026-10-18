@@ -121,7 +121,7 @@ function area(path: string, label: string, placeholder = "") {
   return `<label>${label}</label><textarea data-path="${path}" placeholder="${esc(placeholder)}">${esc(String(getPath(path) ?? ""))}</textarea>`;
 }
 function num(path: string, label: string, min: number, max: number, step = 1) {
-  return `<div><label>${label}</label><input type="number" data-path="${path}" data-num min="${min}" max="${max}" step="${step}" value="${getPath(path)}"></div>`;
+  return `<div><label>${label}</label><input type="number" data-path="${path}" data-num min="${min}" max="${max}" step="${step}" value="${getPath(path) ?? 0}"></div>`;
 }
 const fmt = (path: string, v: number) =>
   path === "monstro.esquiva"
@@ -349,8 +349,13 @@ function viewAtaques() {
               ${num(`${p}.dano`, "Dano / cura", 0, 999)}
               ${num(`${p}.tamanho`, "Tamanho ×", 0.3, 4, 0.1)}
               ${num(`${p}.caixaL`, "Caixa: largura (0 = padrão)", 0, 600, 10)}
-              ${num(`${p}.caixaA`, "Caixa: altura (0 = padrão)", 0, 180, 10)}
+              ${num(`${p}.caixaA`, "Caixa: altura (0 = padrão)", 0, 320, 10)}
             </div>
+            ${cfg.mecanica.ordem === "simultaneo" ? num(`${p}.inicio`, "Começa em (s)", 0, 120, 0.5) : ""}
+            ${select(`${p}.modo`, "Alma neste ataque", {
+              "": "A da batalha",
+              ...Object.fromEntries((Object.keys(SOUL_INFO) as SoulMode[]).map((m) => [m, SOUL_INFO[m].nome])),
+            })}
             ${text(`${p}.fala`, "Fala durante este ataque")}`,
           )}`
             : ""
@@ -362,7 +367,7 @@ function viewAtaques() {
   const lib = loadLibrary();
   const total =
     cfg.mecanica.ordem === "simultaneo"
-      ? Math.max(0, ...cfg.ataques.map((x) => x.duracao))
+      ? Math.max(0, ...cfg.ataques.map((x) => (x.inicio ?? 0) + x.duracao))
       : cfg.ataques.reduce((n, x) => n + x.duracao, 0);
   return `
     <div class="row">
@@ -434,9 +439,15 @@ function viewPresets() {
   ];
   const cards = shown
     .map(({ p, src, i }) => {
-      const modos = [...new Set([p.config.alma.modo, ...(p.turnos.map((t) => t.modo).filter(Boolean) as SoulMode[])])];
+      const modos = [
+        ...new Set([
+          p.config.alma.modo,
+          ...(p.turnos.flatMap((t) => [t.modo, ...t.ataques.map((a) => a.modo)]).filter(Boolean) as SoulMode[]),
+        ]),
+      ];
       const hearts = modos.map((m) => `<span style="color:${SOUL_INFO[m].cor}" title="${esc(SOUL_INFO[m].nome)}">♥</span>`).join("");
-      const tags = [p.jogo, `${Math.max(1, p.turnos.length)} fases`, p.config.mecanica.karma ? "KR" : ""].filter(Boolean).join(" · ");
+      const nivel = p.nivel ? `dificuldade ${"★".repeat(p.nivel)}${"☆".repeat(4 - p.nivel)}` : "";
+      const tags = [p.jogo, `${Math.max(1, p.turnos.length)} fases`, nivel, p.config.mecanica.karma ? "KR" : ""].filter(Boolean).join(" · ");
       return `<div class="preset">
         <div class="preset-main"><b>${hearts} ${esc(p.nome)}</b><span class="muted">${esc(p.descricao)}</span>
           <span class="tag">${esc(tags)}</span></div>

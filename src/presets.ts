@@ -23,9 +23,68 @@ export interface PresetFile {
   nome: string;
   jogo?: string;
   descricao: string;
+  nivel?: number; // 1 = monstro comum, 2 = chefe, 3 = chefe difícil, 4 = extremo
   config: BattleConfig;
   turnos: SavedTurn[];
 }
+
+/** Nível de cada luta: guia o balanceamento (dev/balanco.ts) e aparece no painel. */
+const NIVEL: Record<string, number> = {
+  Toriel: 2, Papyrus: 2, Undyne: 2, Mettaton: 2, Muffet: 2, "Mad Dummy": 2, Asgore: 2, "Greater Dog": 2,
+  "K. Round": 2, King: 2, Berdly: 2, Queen: 2, Tenna: 2, "Tasque Manager": 2,
+  "Undyne, a Imortal": 3, "Mettaton NEO": 3, "Omega Flowey": 3, Asriel: 3, Jevil: 3, "Spamton NEO": 3,
+  "Roaring Knight": 3, "Hammer of Justice": 3, Titan: 3,
+  Sans: 4, "Last Breath": 4, "Kaizo Knight": 4,
+};
+export const nivelDe = (nome: string) => NIVEL[nome] ?? 1;
+
+/**
+ * Ajuste fino de intensidade por fase ("Luta|Fase"), medido com dev/balanco.ts: um robô que desvia com
+ * reação de gente e uma alma parada. Fases fáceis demais sobem, impossíveis descem.
+ */
+const AJUSTE: Record<string, number> = Object.fromEntries(
+  Object.entries({
+    Froggit: { Zumbido: 1.8, "Pula-pula": 1.35 },
+    Napstablook: { "Choro de verdade": 0.75, "Nuvem de lágrimas": 0.65 },
+    Toriel: { "Corredor de brasas": 1.8, "Mãos e brasas": 0.65 },
+    Papyrus: { "Treino de ossos": 0.8, Escadinha: 0.8, "Corredor comprido": 0.8 },
+    Undyne: { "Fuga pelo corredor": 1.35, "Golpe final": 1.15 },
+    "Undyne, a Imortal": { "Chão de lanças": 1.8, Ciclone: 0.65 },
+    Mettaton: { "Corredor estreito": 0.75, "Braços em cruz": 1.8, "Chuva de raios": 0.75, "Grande final": 0.65 },
+    "Mettaton NEO": { "Disparo NEO": 0.65 },
+    Muffet: { "Hora do chá": 0.77, "O bichinho": 0.77 },
+    "Guardas Reais 01 e 02": { "Abraço quente": 0.65 },
+    "Greater Dog": { "Lança azul": 0.8, "Cachorrinho animado": 0.8 },
+    "Knight Knight": { "Lua cheia": 0.75 },
+    Madjick: { Orbes: 0.65, "Truque de mágica": 0.76 },
+    Glyde: { "Voo rasante": 0.75 },
+    "So Sorry": { "Lápis": 0.75 },
+    "Mad Dummy": { "Exército de bonecos": 1.35, "Facas de algodão": 1.8, "Fúria de pano": 0.75 },
+    Asgore: { "Roda de fogo": 1.35, "Chuva de brasas": 0.75, "Fúria do rei": 0.65 },
+    "Flowey (início)": { "Pétalas amigáveis": 0.75 },
+    "Omega Flowey": { "Pétalas em X": 1.35, Videiras: 1.8, "Lança-chamas e bombas": 0.75, "Perseverança (livros)": 1.35, "Justiça (revólver)": 1.35, "Canal fora do ar": 0.75 },
+    Asriel: { "Chuva de estrelas": 1.35, "Sabre do caos": 1.35, "Hiper-vórtice": 0.75, "Lanças de arco-íris": 0.65 },
+    Sans: { "Azul e laranja": 1.35, "Cerco de canhões": 1.35, Gravidade: 1.8, "Grade de ossos": 1.35, "Corredor comprido": 0.8 },
+    Rudinn: { Brilho: 0.75 },
+    Hathy: { "Roda de corações": 0.75, "Coração grudento": 1.35 },
+    "K. Round": { "Pulo real": 1.35, Estrelinhas: 0.84, "Braço comprido": 1.44 },
+    Clover: { "Três cabeças": 0.75 },
+    Jevil: { "Cerco de espadas": 0.75, "Diamantes subindo": 1.51, "Caos, caos!": 1.8 },
+    King: { "Investida com corrente": 0.77, "Caixa encolhendo": 0.75, "Cerco de espadas": 0.65, "Fúria real": 0.65 },
+    Queen: { "Raio do monitor": 1.35, "Download final": 0.65 },
+    "Spamton NEO": { "Cabecinhas no fio": 1.8, "Tiro grande": 1.11, "Canos e cabeças": 1.35, "Telefone em roda": 0.82, "[[ATAQUE FINAL]]": 0.65 },
+    "Tasque Manager": { Gatinhos: 0.75, Chicote: 1.35 },
+    Werewire: { "Faíscas": 0.75 },
+    Tenna: { "Estrelas do show": 0.75 },
+    "Roaring Knight": { "Corte fino": 1.35, "Muralha de espadas": 1.35, "Teia vermelha": 1.51, "Lua vermelha": 0.65, "Espadas em órbita": 0.75, "Escuridão total": 1.29 },
+    "Hammer of Justice": { "Machados caindo": 1.35, "Corredor comprido": 1.35 },
+    Titan: { Enxame: 0.83, "Estrelas sombrias": 1.8 },
+    "Last Breath": { "Fase 1 — Boas-vindas": 1.3, "Fase 1 — Portões": 1.3, "Fase 2 — Rodada sem fim": 1.35, "Fase 3 — Poço": 1.3, "Fase 3 — Caixa viva": 1.3 },
+    "Kaizo Knight": { "Luas crescentes": 0.69, Estocada: 1.68, "Neve de diamantes": 0.82, "Visão dupla": 0.8, Guilhotina: 1.68, "Puxão na alma": 0.75, "Cone de luz": 0.77, Bolhas: 1.35, "Muralha de espadas": 1.26, "Teia e mira": 1.35, "Espadas em órbita": 0.8, "Final — Galáxia": 1.8, "Final — Constelação": 1.35 },
+  } as Record<string, Record<string, number>>).flatMap(([luta, fases]) =>
+    Object.entries(fases).map(([fase, v]) => [`${luta}|${fase}`, v]),
+  ),
+);
 
 // ---------- atalhos ----------
 type Opts = Partial<AttackConfig>;
@@ -86,18 +145,19 @@ function build(d: Def): PresetFile {
   c.alma.modo = first.modo ?? d.modo;
   if (d.caixa) [c.mecanica.caixaL, c.mecanica.caixaA] = d.caixa;
   c.mecanica.ordem = first.ordem;
-  c.mecanica.intensidade = first.intensidade ?? 1;
+  const ajuste = (x: TurnDef) => +(((x.intensidade ?? 1) * (AJUSTE[`${d.nome}|${x.nome}`] ?? 1)).toFixed(2));
+  c.mecanica.intensidade = ajuste(first);
   c.mecanica.karma = !!d.karma;
   c.ataques = structuredClone(first.ataques);
   const turnos: SavedTurn[] = d.turnos.map((x) => ({
     modo: d.modo,
-    intensidade: 1,
     esquiva: d.esquiva ?? 0,
     ...x,
+    intensidade: ajuste(x),
     cenario: { ...base, ...(x.cenario ?? {}) },
   }));
   c.cenario = structuredClone(turnos[0].cenario!);
-  return { formato: PRESET_FORMAT, versao: 1, nome: d.nome, jogo: d.jogo, descricao: d.descricao, config: c, turnos };
+  return { formato: PRESET_FORMAT, versao: 1, nome: d.nome, jogo: d.jogo, descricao: d.descricao, nivel: nivelDe(d.nome), config: c, turnos };
 }
 
 const DR: [number, number] = [160, 150]; // caixa quadrada do Deltarune
@@ -166,8 +226,8 @@ const UNDERTALE: Def[] = [
     turnos: [
       t("Treino de ossos", [a("ossos", 5, { velocidade: 0.9 })]),
       t("Osso azul!", [a("varredura", 4, { ...azul, densidade: 0.8 }), a("ossos", 3)]),
-      t("Escadinha", [a("ossos", 6, { velocidade: 1.2, densidade: 1.6 })]),
-      t("Corredor comprido", [a("ossos", 7, { ...caixa(420, 120), densidade: 1.3 })]),
+      t("Escadinha", [a("ossos", 6, { velocidade: 1.1, densidade: 1.3 })]),
+      t("Corredor comprido", [a("ossos", 7, { ...caixa(420, 120), densidade: 1.1 })]),
       t("Cortina azul", [a("cortina", 5, { ...azul }), a("ossos", 3, { densidade: 1.2 })]),
       t("Ataque especial (com cachorro)", [a("ossos", 4, { densidade: 1.8, velocidade: 1.2 }), a("varredura", 3, { ...azul }), a("lateral", 3, em("🐶", { densidade: 0.4, dano: 0 })), a("estacas", 3, { ...caixa(300, 150) })], { intensidade: 1.15 }),
     ],
@@ -205,7 +265,7 @@ const UNDERTALE: Def[] = [
       t("Bombas no palco", [a("bombas", 7), a("chuva", 7, em("☂", { velocidade: 0.5, densidade: 0.3 }))], juntos),
       t("Pernas!", [a("varredura", 6, { forma: "quadrado" })], { modo: "vermelha" }),
       t("Globo de luz", [a("discoteca", 7), a("chuva", 7, { forma: "quadrado", velocidade: 0.7, densidade: 0.4 })], juntos),
-      t("Corredor estreito", [a("bombas", 7, { ...caixa(60, 170), densidade: 1.3 })]),
+      t("Corredor estreito", [a("bombas", 7, { ...caixa(60, 170), densidade: 0.9 })]),
       t("Braços em cruz", [a("cruz", 6, { cor: "#ffe14a" }), a("laser", 6, { cor: "#ffe14a", densidade: 0.7 })], juntos),
       t("Chuva de raios", [a("espiral", 6, em("⚡", { densidade: 0.7 })), a("bombas", 6, { densidade: 0.6 })], juntos),
       t("Grande final", [a("bombas", 9, { densidade: 1.3 }), a("discoteca", 9), a("chuva", 9, em("⚡", { densidade: 0.5 }))], { ...juntos, intensidade: 1.2, cenario: { efeito: "estrelas", corEfeito: "#ffe14a" } }),
@@ -253,7 +313,7 @@ const UNDERTALE: Def[] = [
     acoes: ["Conferir", "Fazer carinho", "Brincar", "Ignorar"],
     turnos: [
       t("Lança no chão", [a("ossos", 6, { forma: "seta", velocidade: 1.1 })]),
-      t("Lança azul", [a("varredura", 5, { ...azul, forma: "seta" })]),
+      t("Lança azul", [a("varredura", 5, { ...azul, forma: "seta" }), a("ossos", 5, { forma: "seta", densidade: 0.6 })], juntos),
       t("Cachorrinho animado", [a("lateral", 5, em("🐶", { densidade: 0.6 })), a("ossos", 5, { forma: "seta" })], juntos),
     ],
   },
@@ -278,7 +338,7 @@ const UNDERTALE: Def[] = [
   {
     nome: "Glyde", jogo: "Undertale", descricao: "Voos rasantes e muita pose.",
     hp: 220, atk: 6, def: 20, modo: "vermelha", poupavel: true,
-    turnos: [t("Voo rasante", [a("lateral", 6, { cor: "#9fd8ff" }), a("espiral", 6, { densidade: 0.6 })], juntos)],
+    turnos: [t("Voo rasante", [a("lateral", 6, { cor: "#9fd8ff", densidade: 0.6 }), a("espiral", 6, { densidade: 0.4 })], juntos)],
   },
   {
     nome: "So Sorry", jogo: "Undertale", descricao: "Rabiscos e lápis voando.",
@@ -304,7 +364,7 @@ const UNDERTALE: Def[] = [
     hp: 3500, atk: 10, def: 10, modo: "vermelha",
     cenario: { fundoCor: "#0d0008", efeito: "chamas", corEfeito: "#ff3a2a", escuro: 0.3 },
     turnos: [
-      t("Correntes de fogo", [a("ondas", 6, { ...fogo })]),
+      t("Correntes de fogo", [a("ondas", 6, { ...fogo, velocidade: 0.8, densidade: 0.7 })]),
       t("Mãos do rei", [a("maos", 6, { ...fogo, densidade: 1.3 })]),
       t("Roda de fogo", [a("roda", 7, { ...fogo })]),
       t("Tridente", [a("golpecor", 6)]),
@@ -352,7 +412,7 @@ const UNDERTALE: Def[] = [
       t("Alma perdida: ossos", [a("ossos", 6), a("varredura", 6, { ...azul, densidade: 0.6 })], { ...juntos, modo: "azul" }),
       t("Alma perdida: lanças", [a("lancas", 6, { cor: "#4fc3ff" })], { modo: "verde" }),
       t("Alma perdida: fogo", [a("roda", 6, { ...fogo }), a("maos", 6, { ...fogo, densidade: 0.6 })], juntos),
-      t("Fim de todas as coisas", [a("vortice", 9, { forma: "estrela" }), a("raios", 9, { cor: "#ffffff", densidade: 0.7 }), a("chuva", 9, { forma: "estrela", densidade: 0.5 })], { ...juntos, intensidade: 1.35, cenario: { efeito: "pulso", corEfeito: "#ff5ad1", tremor: 0.2 } }),
+      t("Fim de todas as coisas", [a("vortice", 9, { forma: "estrela", densidade: 0.7 }), a("raios", 9, { cor: "#ffffff", densidade: 0.4 })], { ...juntos, intensidade: 1.35, cenario: { efeito: "pulso", corEfeito: "#ff5ad1", tremor: 0.2 } }),
     ],
   },
   {
@@ -378,12 +438,12 @@ const UNDERTALE: Def[] = [
 // ======================================================================
 const DELTARUNE: Def[] = [
   {
-    nome: "Lancer", jogo: "Deltarune", descricao: "Espadas de baralho e uma moto muito barulhenta.",
+    nome: "Lancer", jogo: "Deltarune", descricao: "Espadas de baralho caindo, pás arremessadas e uma moto muito barulhenta.",
     hp: 210, atk: 5, def: 0, modo: "vermelha", caixa: DR, poupavel: true,
     turnos: [
-      t("Chuva de espadas", [a("chuva", 5, em("♠", { cor: "#ffffff" }))]),
+      t("Chuva de espadas", [a("chuva", 5, em("♠", { cor: "#ffffff", velocidade: 0.8 }))]),
+      t("Pás arremessadas", [a("mirado", 5, em("♠", { velocidade: 0.8, densidade: 0.7 }))]),
       t("Vruum!", [a("lateral", 5, { velocidade: 1.1 }), a("cortina", 3, { densidade: 0.6 })]),
-      t("Espadas giratórias", [a("giratorio", 5, em("♠"))]),
     ],
   },
   {
@@ -399,45 +459,51 @@ const DELTARUNE: Def[] = [
     hp: 110, atk: 5, def: 0, modo: "vermelha", caixa: DR, poupavel: true,
     turnos: [
       t("Roda de corações", [a("anel", 5, em("♥", { cor: "#ff5a8a", velocidade: 0.8 }))]),
-      t("Coração grudento", [a("mirado", 5, em("♥", { densidade: 0.7 }))]),
+      t("Coração grudento", [a("teleguiado", 5, em("♥", { densidade: 0.5, velocidade: 0.8 }))]),
     ],
   },
   {
-    nome: "K. Round", jogo: "Deltarune", descricao: "Pulos pesados, coroas quicando e tremedeira.",
+    nome: "K. Round", jogo: "Deltarune", descricao: "Pula por cima da caixa, estrelinhas quicando e um braço comprido que varre.",
     hp: 2000, atk: 8, def: 2, modo: "vermelha", caixa: DR,
     turnos: [
       t("Pulo real", [a("arco", 5, { densidade: 0.9 }), a("estacas", 5, { densidade: 0.7 })], juntos),
-      t("Coroas", [a("ricochete", 5, { forma: "estrela", cor: "#ffe14a" })]),
+      t("Estrelinhas", [a("ricochete", 5, { forma: "estrela", cor: "#ffffff", tamanho: 0.7 })]),
+      t("Braço comprido", [a("varredura", 5, { densidade: 0.8 }), a("chuva", 5, { forma: "estrela", densidade: 0.4 })], juntos),
       t("Terremoto", [a("estacas", 6, { densidade: 1.3 }), a("explosao", 6, { densidade: 0.8 })], { ...juntos, cenario: { tremor: 0.3 } }),
     ],
   },
   {
     nome: "Clover", jogo: "Deltarune", descricao: "Três cabeças, três opiniões, três ataques.",
     hp: 600, atk: 8, def: 0, modo: "vermelha", caixa: DR, poupavel: true,
-    turnos: [t("Três cabeças", [a("espiral", 7, { densidade: 0.6 }), a("mirado", 7, { densidade: 0.6 }), a("chuva", 7, { densidade: 0.6 })], juntos)],
+    turnos: [t("Três cabeças", [a("espiral", 7, { densidade: 0.45 }), a("mirado", 7, { densidade: 0.45 }), a("chuva", 7, { densidade: 0.45 })], juntos)],
   },
   {
-    nome: "Jevil", jogo: "Deltarune", descricao: "Cartas, carrossel, bombas, foices girando e CAOS. Chefe secreto.",
+    nome: "Jevil", jogo: "Deltarune", descricao: "Baralho cercando, corações em espiral, foices, carrossel, bombas de espadas e o caos final sem caixa. Chefe secreto.",
     hp: 3500, atk: 10, def: 0, modo: "vermelha", caixa: DR, poupavel: true,
     cenario: { fundoCor: "#08000f", efeito: "estrelas", corEfeito: "#ff5ad1", tremor: 0.05 },
     acoes: ["Conferir", "Ser alegre", "Hipnotizar", "Brincar"],
     turnos: [
-      t("Baralho em roda", [a("anel", 6, em("♦", { cor: "#ff5a5a", densidade: 1.3 }))]),
-      t("Carrossel", [a("lateral", 6, em("🐴", { densidade: 0.9 })), a("espiral", 6, em("♣", { densidade: 0.6 }))], juntos),
-      t("Bombas de espadas", [a("ricochete", 6, em("💣")), a("explosao", 6, em("♠", { densidade: 1.2 }))], juntos),
-      t("Foices dançantes", [a("giratorio", 6, { cor: "#c879ff", densidade: 1.3, tamanho: 1.3 })]),
-      t("Caos, caos!", [a("vortice", 6, em("♠")), a("anel", 6, em("♦", { densidade: 0.7 }))], { ...juntos, intensidade: 1.3, cenario: { efeito: "pulso", tremor: 0.15 } }),
-      t("Último truque", [a("ponteiro", 6, { cor: "#ff5ad1" }), a("giratorio", 6, { densidade: 0.8 }), a("chuva", 6, em("♠", { densidade: 0.8 }))], { ...juntos, intensidade: 1.4 }),
+      t("Baralho caindo", [a("chuva", 6, em("♣", { densidade: 1.1 })), a("lateral", 6, em("♠", { densidade: 0.5 }))], juntos),
+      t("Cerco de espadas", [a("anel", 6, em("♠", { densidade: 1.2 }))]),
+      t("Corações em espiral", [a("espiral", 6, em("♥", { cor: "#ff5a5a" }))]),
+      t("Foices dançantes", [a("giratorio", 6, { cor: "#c879ff", densidade: 1.2, tamanho: 1.3 })]),
+      t("Carrossel", [a("lateral", 6, em("🐴", { densidade: 0.9 })), a("chuva", 6, em("♦", { densidade: 0.4 }))], juntos),
+      t("Diamantes subindo", [a("arco", 6, em("♦", { cor: "#ff5a5a", densidade: 1.2 }))]),
+      t("Bombas de espadas", [a("bolhas", 6, em("♠")), a("explosao", 6, em("♣", { densidade: 0.6 }))], juntos),
+      t("Caos, caos!", [arena(9), a("giratorio", 9, { cor: "#ffffff", densidade: 1.1 }), a("visaodupla", 9), a("chuva", 9, em("♠", { densidade: 0.6 }))], { ...juntos, intensidade: 1.15, cenario: { efeito: "pulso", tremor: 0.15 } }),
     ],
   },
   {
-    nome: "King", jogo: "Deltarune", descricao: "Espadas aéreas, correntes e fúria real.",
+    nome: "King", jogo: "Deltarune", descricao: "Espadas atiradas, investidas com corrente, a caixa encolhendo e um cerco de espadas.",
     hp: 2000, atk: 10, def: 0, modo: "vermelha", caixa: DR,
-    cenario: { fundoCor: "#0a0005", efeito: "pulso", corEfeito: "#ff2040" },
+    cenario: { fundoCor: "#0a0005", efeito: "pulso", corEfeito: "#2a3cff" },
     turnos: [
-      t("Espadas aéreas", [a("chuva", 6, em("♠", { densidade: 1.3 }))]),
-      t("Correntes", [a("lateral", 6, { forma: "quadrado", velocidade: 1.1 })]),
-      t("Fúria real", [a("mirado", 7, em("♠")), a("cerco", 7, { cor: "#ff2040" })], { ...juntos, intensidade: 1.2, cenario: { tremor: 0.15 } }),
+      t("Espadas atiradas", [a("mirado", 6, em("♠", { densidade: 1.1 }))]),
+      t("Investida com corrente", [a("estocada", 6, { densidade: 0.8 }), a("lateral", 6, em("♠", { densidade: 0.5 }))], juntos),
+      t("Caixa encolhendo", [a("pinos", 6, { ...caixa(100, 90), densidade: 0.8 })]),
+      t("Corrente que chicoteia", [a("corte", 6, { densidade: 1.1 })]),
+      t("Cerco de espadas", [a("anel", 6, em("♠")), a("pinos", 6, { densidade: 0.6 })], juntos),
+      t("Fúria real", [a("mirado", 8, em("♠")), a("corte", 8, { densidade: 0.8 }), a("pinos", 8, { densidade: 0.6 })], { ...juntos, intensidade: 1.15, cenario: { tremor: 0.15 } }),
     ],
   },
   {
@@ -449,38 +515,40 @@ const DELTARUNE: Def[] = [
     ],
   },
   {
-    nome: "Queen", jogo: "Deltarune", descricao: "Taças quicando, raios, cabos e cadeiras voando.",
+    nome: "Queen", jogo: "Deltarune", descricao: "Penas do ajudante, a taça de ácido, raio do monitor, rostinhos e redes, palavras voando e o download final.",
     hp: 4000, atk: 10, def: 0, modo: "vermelha", caixa: DR,
-    cenario: { fundoCor: "#000a14", efeito: "grade", corEfeito: "#5ad1ff" },
+    cenario: { fundoCor: "#14000a", efeito: "grade", corEfeito: "#5aff8a" },
     turnos: [
-      t("Brinde", [a("ricochete", 6, em("🍷"))]),
-      t("Raios", [a("laser", 6, { cor: "#5ad1ff" })]),
-      t("Cabos", [a("tunel", 6, { cor: "#5ad1ff" })]),
-      t("Cadeiras voando", [a("giratorio", 6, em("🪑"))]),
-      t("Final", [a("cruz", 8, { cor: "#5ad1ff" }), a("ricochete", 8, em("🍷"))], { ...juntos, intensidade: 1.2 }),
+      t("Penas do ajudante", [a("mirado", 6, { forma: "seta", cor: "#ffffff", densidade: 0.9 })]),
+      t("Brinde ácido", [a("bolhas", 6, { cor: "#5aff8a" }), a("chuva", 6, { forma: "gota", cor: "#ffffff", densidade: 0.5 })], juntos),
+      t("Raio do monitor", [a("laser", 6, { cor: "#ffe14a", densidade: 0.8 }), a("ponteiro", 6, { cor: "#ffffff" })], juntos),
+      t("Rostinhos e redes", [a("chuva", 6, em("🙂", { densidade: 1.2 })), a("explosao", 6, { forma: "quadrado", cor: "#5aff8a", densidade: 0.6 })], juntos),
+      t("Palavras voando", [a("lateral", 6, em("💬", { velocidade: 0.9 }))]),
+      t("Download final", [a("pinos", 9, { cor: "#5aff8a" }), a("chuva", 9, em("🙂", { densidade: 0.8 })), a("canhao", 9, { cor: "#5aff8a", densidade: 0.6 })], { ...juntos, intensidade: 1.15, cenario: { tremor: 0.1 } }),
     ],
   },
   {
-    nome: "Spamton", jogo: "Deltarune", descricao: "Cabeças voando e OFERTAS IMPERDÍVEIS.",
+    nome: "Spamton", jogo: "Deltarune", descricao: "Cifrões e OFERTAS voando em volta da caixa e cabecinhas que vêm da direita.",
     hp: 800, atk: 8, def: 0, modo: "vermelha", caixa: DR, poupavel: true,
     cenario: { efeito: "estatica", corEfeito: "#ffe14a" },
     turnos: [
-      t("Cabeças", [a("mirado", 6, { forma: "quadrado", cor: "#ffffff" })]),
-      t("Ofertas", [a("chuva", 6, em("💲")), a("lateral", 6, { densidade: 0.6 })], juntos),
+      t("Ofertas imperdíveis", [a("espiral", 6, em("💲", { densidade: 0.7 }))]),
+      t("Cabecinhas", [a("lateral", 6, { forma: "quadrado", cor: "#ffffff", densidade: 0.7 }), a("mirado", 6, { forma: "quadrado", densidade: 0.5 })], juntos),
     ],
   },
   {
-    nome: "Spamton NEO", jogo: "Deltarune", descricao: "Alma amarela: atire nas cabeças, ovos e telefones. Chefe secreto.",
-    hp: 4999, atk: 13, def: 0, modo: "amarela", caixa: DR,
+    nome: "Spamton NEO", jogo: "Deltarune", descricao: "Alma amarela numa caixa larga: cabecinhas, tiro grande do braço que vira estilhaços, ovos, telefone em roda e o ataque final. Chefe secreto.",
+    hp: 4999, atk: 13, def: 0, modo: "amarela", caixa: [230, 100],
     cenario: { fundoCor: "#000814", efeito: "estatica", corEfeito: "#ffe14a", tremor: 0.08 },
     acoes: ["Conferir", "Ligar para ajuda", "Comprar"],
     turnos: [
-      t("Cabeças voadoras", [a("mirado", 6, { forma: "quadrado", velocidade: 1.3, densidade: 1.3 })]),
-      t("Feixes", [a("canhao", 6, { cor: "#ffe14a" }), a("laser", 6, { cor: "#ff5a8a" })], { ...juntos, modo: "vermelha" }),
-      t("Telefone", [a("ricochete", 6, em("☎"))]),
-      t("Ovos", [a("explosao", 6, em("🥚"))]),
-      t("Mangueira", [a("tunel", 6, { cor: "#5ad1ff", velocidade: 1.2 })], { modo: "vermelha" }),
-      t("[[ATAQUE FINAL]]", [a("cerco", 9, { cor: "#ffe14a" }), a("mirado", 9, { forma: "quadrado" }), a("chuva", 9, em("💲"))], { ...juntos, intensidade: 1.45, cenario: { tremor: 0.25, corEfeito: "#ff5ad1" } }),
+      t("Cabecinhas no fio", [a("lateral", 6, { forma: "quadrado", cor: "#5ad1ff", densidade: 0.9 })]),
+      t("Tiro grande", [a("estilhacos", 6, { densidade: 0.9 }), a("mirado", 6, { forma: "diamante", densidade: 0.6 })], juntos),
+      t("Canos e cabeças", [a("bombas", 6, { cor: "#ffffff" }), a("lateral", 6, { forma: "quadrado", cor: "#5ad1ff", densidade: 0.5 })], juntos),
+      t("Ovos e balões", [a("ricochete", 6, em("🥚")), a("chuva", 6, { cor: "#ffe14a", densidade: 0.6 })], juntos),
+      t("Telefone em roda", [a("orbita", 6, em("☎", { cor: "#5aff8a" }))]),
+      t("Corte de fios", [a("lateral", 6, { forma: "seta", cor: "#ffffff", velocidade: 1.2 })], { modo: "vermelha" }),
+      t("[[ATAQUE FINAL]]", [a("espiral", 9, em("💲", { densidade: 0.6 })), a("estilhacos", 9, { densidade: 0.5 }), a("lateral", 9, { forma: "quadrado", densidade: 0.5 })], { ...juntos, intensidade: 1.15, cenario: { tremor: 0.25, corEfeito: "#ff5ad1" } }),
     ],
   },
   {
@@ -500,45 +568,55 @@ const DELTARUNE: Def[] = [
     ],
   },
   {
-    nome: "Tenna", jogo: "Deltarune", descricao: "Show de TV: raios, varreduras, comerciais. (aproximado)",
+    nome: "Tenna", jogo: "Deltarune", descricao: "Previsão do tempo ao vivo: chuva, neve, sol e lua, raios no estúdio e estrelas do show.",
     hp: 4000, atk: 10, def: 0, modo: "vermelha", caixa: DR,
     cenario: { fundoCor: "#000818", efeito: "estatica", corEfeito: "#ffe14a" },
     turnos: [
-      t("No ar!", [a("laser", 6, { cor: "#ffe14a" }), a("varredura", 6, { densidade: 0.7 })], juntos),
-      t("Antena", [a("explosao", 6, { forma: "estrela", cor: "#ffe14a" })]),
-      t("Intervalo comercial", [a("cortina", 4), a("corte", 4)]),
+      t("Previsão: chuva", [a("chuva", 6, { forma: "gota", cor: "#9fd8ff", densidade: 1.2 })]),
+      t("Previsão: neve", [a("nevasca", 6, { cor: "#ffffff", densidade: 0.7 })]),
+      t("Sol e lua", [a("espiral", 6, em("☀", { densidade: 0.6 })), a("arco", 6, em("🌙", { densidade: 0.5 }))], juntos),
+      t("Raios no estúdio", [a("raios", 6, { cor: "#ffe14a" })]),
+      t("Estrelas do show", [a("ricochete", 6, { forma: "estrela", cor: "#ffffff" }), a("explosao", 6, { forma: "estrela", densidade: 0.6 })], juntos),
     ],
   },
   {
-    nome: "Roaring Knight", jogo: "Deltarune", descricao: "Espadas em formação, cortes e tempestade. Extremamente difícil. (aproximado)",
+    nome: "Roaring Knight", jogo: "Deltarune", descricao: "Corte fino, cone de estrelas, feixe vermelho com losangos, muralha e órbita de espadas, teia vermelha e o final sem caixa. Extremamente difícil.",
     hp: 9999, atk: 15, def: 10, modo: "vermelha", caixa: DR,
     cenario: { fundoCor: "#000000", efeito: "particulas", corEfeito: "#ffffff", escuro: 0.6, tremor: 0.1 },
     turnos: [
-      t("Espadas em roda", [a("cerco", 7, { densidade: 1.3 })], { intensidade: 1.2 }),
-      t("Cortes", [a("corte", 7, { densidade: 1.4 })]),
-      t("Chuva de lâminas", [a("chuva", 7, { forma: "seta", densidade: 1.4 }), a("estacas", 7, { densidade: 1.2 })], juntos),
-      t("Tempestade", [a("giratorio", 8, { densidade: 1.4 }), a("espiral", 8, { forma: "seta", densidade: 0.7 })], { ...juntos, intensidade: 1.3 }),
-      t("Escuridão total", [a("cerco", 4), a("corte", 4), a("ponteiro", 5)], { intensidade: 1.5, cenario: { escuro: 0.85, tremor: 0.25 } }),
+      t("Corte fino", [a("estocada", 6)]),
+      t("Cone de estrelas", [a("cone", 6, { densidade: 0.8 }), a("chuva", 6, { forma: "estrela6", densidade: 0.5 })], juntos),
+      t("Feixe vermelho", [a("laser", 6, { cor: "#ff2040", tamanho: 1.4 }), a("pinos", 6, { densidade: 0.8 })], juntos),
+      t("Muralha de espadas", [a("muralha", 7)]),
+      t("Teia vermelha", [a("teia", 7)]),
+      t("Lua vermelha", [a("crescente", 6, { cor: "#ff2040" }), a("estilhacos", 6, { cor: "#ff2040", densidade: 0.6 })], juntos),
+      t("Espadas em órbita", [a("orbita", 7)]),
+      t("Escuridão total", [arena(10), a("galaxia", 10, { densidade: 0.9 }), a("corte", 10, { densidade: 0.6 })], { ...juntos, intensidade: 1.15, cenario: { escuro: 0.85, tremor: 0.25 } }),
     ],
   },
   {
-    nome: "Hammer of Justice", jogo: "Deltarune", descricao: "Martelada em arco, cascos quicando e justiça. Chefe secreto. (aproximado)",
-    hp: 9999, atk: 15, def: 10, modo: "vermelha", caixa: DR,
+    nome: "Hammer of Justice", jogo: "Deltarune", descricao: "Quase tudo com alma verde: flechas dos quatro lados e as traiçoeiras. Entre elas, machados caindo e um corredor comprido. Chefe secreto.",
+    hp: 9999, atk: 15, def: 10, modo: "verde",
     cenario: { fundoCor: "#000a02", efeito: "pulso", corEfeito: "#9cff6a" },
     turnos: [
-      t("Martelada", [a("arco", 6, { densidade: 1.3 }), a("estacas", 6)], { ...juntos, cenario: { tremor: 0.15 } }),
-      t("Cascos", [a("ricochete", 6, { velocidade: 1.4 })]),
-      t("Justiça", [a("cruz", 8, { cor: "#9cff6a" }), a("arco", 8)], { ...juntos, intensidade: 1.3 }),
+      t("Defesa", [a("flechas", 7, { cor: "#ffe14a", densidade: 1.2 })]),
+      t("Flechas traiçoeiras", [a("lancas", 7, { cor: "#ffe14a" })]),
+      t("Machados caindo", [a("chuva", 6, em("🪓", { ...caixa(140, 140), densidade: 0.8 }))], { modo: "vermelha" }),
+      t("Sinos da justiça", [a("flechas", 8, { cor: "#ffe14a", velocidade: 1.4, densidade: 1.5 })]),
+      t("Corredor comprido", [a("muralha", 7, { ...caixa(440, 70), densidade: 0.8 })], { modo: "vermelha" }),
+      t("Justiça final", [a("lancas", 10, { cor: "#ffe14a", velocidade: 1.4, densidade: 1.6 })], { intensidade: 1.15, cenario: { tremor: 0.15 } }),
     ],
   },
   {
-    nome: "Titan", jogo: "Deltarune", descricao: "Sombras em espiral, anéis e um colapso que puxa tudo. (aproximado)",
+    nome: "Titan", jogo: "Deltarune", descricao: "Tudo no escuro: só se vê perto da alma. Sombras perseguem, enxames giram e um colapso puxa tudo.",
     hp: 9999, atk: 15, def: 10, modo: "vermelha", caixa: DR,
     cenario: { fundoCor: "#050008", efeito: "particulas", corEfeito: "#c879ff", escuro: 0.7 },
     turnos: [
-      t("Sombras", [a("espiral", 7, { cor: "#c879ff" }), a("mirado", 7, { densidade: 0.7 })], juntos),
-      t("Anéis", [a("anel", 7, { densidade: 1.4, cor: "#c879ff" })]),
-      t("Colapso", [a("vortice", 9, { cor: "#c879ff" }), a("cerco", 9, { cor: "#c879ff" })], { ...juntos, intensidade: 1.4, cenario: { tremor: 0.2 } }),
+      t("Sombras", [a("lanterna", 7), a("teleguiado", 7, { cor: "#ffffff", densidade: 0.8 })], juntos),
+      t("Enxame", [a("lanterna", 7), a("anel", 7, { cor: "#ffffff" }), a("chuva", 7, { forma: "estrela6", densidade: 0.4 })], juntos),
+      t("Mãos da escuridão", [a("lanterna", 7), a("maos", 7, { cor: "#c879ff" })], juntos),
+      t("Estrelas sombrias", [a("lanterna", 7, { tamanho: 1.3 }), a("estilhacos", 7, { cor: "#ff2040", densidade: 0.8 })], juntos),
+      t("Colapso", [a("lanterna", 9), a("vortice", 9, { cor: "#c879ff", densidade: 0.6 }), a("teleguiado", 9, { densidade: 0.3 })], { ...juntos, intensidade: 1.15, cenario: { tremor: 0.2 } }),
     ],
   },
 ];
@@ -552,20 +630,87 @@ const LB3 = { efeito: "estatica" as const, corEfeito: "#ff2040", escuro: 0.5, tr
 const FANGAMES: Def[] = [
   {
     nome: "Last Breath", jogo: "Fangame",
-    descricao: "Paródia em 3 fases cada vez mais brutais: canhões em formação, pancadas, plataformas, grade, ponteiro e caixa viva. Com KR.",
+    descricao: "Paródia do fangame (vista em vídeo): rodadas longas com muitos ataques seguidos, a alma mudando de cor no meio e KR. A fase 2 é uma rodada só, começando sem caixa. Depois ele cansa e volta pior.",
     hp: 1, atk: 1, def: 1, modo: "vermelha", caixa: [240, 160], karma: true, esquiva: 100,
     acoes: ["Conferir", "Implorar", "Desafiar"],
     turnos: [
-      t("Fase 1 — Aquecimento", [a("ossos", 3, { velocidade: 1.4, densidade: 1.3 }), a("canhao", 3, { densidade: 1.3 })]),
-      t("Fase 1 — Pancadas", [a("pancada", 6), a("ossos", 6, { densidade: 0.9 })], juntos),
-      t("Fase 1 — Plataformas", [a("plataformas", 7), a("giratorio", 7, { densidade: 0.6 })], juntos),
-      t("Fase 1 — Azul e laranja", [a("cortina", 3, { ...azul }), a("cortina", 3, { ...laranja }), a("canhao", 3, { densidade: 1.4 })]),
-      t("Fase 2 — Cerco", [a("cerco", 7)], { intensidade: 1.25, cenario: LB2 }),
-      t("Fase 2 — Grade e cortes", [a("grade", 4), a("corte", 4)], { intensidade: 1.25, cenario: LB2 }),
-      t("Fase 2 — Gravidade cruel", [a("pancada", 8, { densidade: 1.5 }), a("cruz", 8)], { ...juntos, intensidade: 1.25, cenario: { ...LB2, escuro: 0.35 } }),
-      t("Fase 3 — Ponteiro", [a("ponteiro", 6), a("ossos", 6, { densidade: 0.8 })], { ...juntos, intensidade: 1.45, cenario: LB3, esquiva: 70 }),
-      t("Fase 3 — Caixa viva", [a("deriva", 8), a("giratorio", 8, { densidade: 1.2 }), a("canhao", 8)], { ...juntos, intensidade: 1.45, cenario: LB3, esquiva: 45 }),
-      t("Fase 3 — Último suspiro", [a("cerco", 3), a("pancada", 3), a("grade", 3), a("ponteiro", 4), a("corte", 3), a("plataformas", 5)], { intensidade: 1.6, cenario: { ...LB3, escuro: 0.65, tremor: 0.25 }, esquiva: 20 }),
+      t("Fase 1 — Boas-vindas", [
+        a("ossos", 2.5, { modo: "azul" }),
+        a("plataformas", 4),
+        a("canhao", 2.5, { modo: "vermelha" }),
+        a("cerco", 3),
+        a("grade", 3, { modo: "vermelha" }),
+        a("cruz", 3),
+      ]),
+      t("Fase 1 — Portões", [
+        a("cortina", 2.5, { ...azul }),
+        a("cortina", 2.5, { ...laranja }),
+        a("tunel", 3.5),
+        a("laser", 2.5, { tamanho: 2.2, densidade: 0.7 }),
+        a("corte", 3),
+        a("ossos", 3, { modo: "azul" }),
+      ]),
+      t("Fase 1 — Gravidade", [
+        a("pancada", 3.5),
+        a("plataformas", 4.5),
+        a("ossos", 2.5, { modo: "azul" }),
+        a("giratorio", 3, { ...laranja, ...caixa(110, 110), modo: "vermelha" }),
+        a("estacas", 3, { ...caixa(80, 220), modo: "vermelha" }),
+        a("canhao", 3),
+      ]),
+      t(
+        "Fase 2 — Rodada sem fim",
+        [
+          arena(15),
+          a("cerco", 5, { densidade: 0.9 }),
+          a("maos", 5, { inicio: 4, cor: "#ffffff" }),
+          a("laser", 4, { inicio: 8, tamanho: 1.6, densidade: 0.8 }),
+          a("giratorio", 4, { inicio: 11 }),
+          a("cortina", 3, { inicio: 15, ...laranja }),
+          a("ossos", 3, { inicio: 15 }),
+          a("corte", 4, { inicio: 18 }),
+          a("canhao", 4, { inicio: 19, densidade: 0.8 }),
+          a("cerco", 5, { inicio: 22, densidade: 1.3 }),
+          a("cruz", 3, { inicio: 27 }),
+          a("pancada", 5, { inicio: 30 }),
+          a("plataformas", 5, { inicio: 30 }),
+        ],
+        { ...juntos, cenario: LB2 },
+      ),
+      t("Fase 2 — Cansado", [a("ossos", 6, { velocidade: 0.6, densidade: 0.5 })], { cenario: { ...LB2, escuro: 0.45 } }),
+      t("Fase 3 — Poço", [
+        a("plataformas", 6, { ...caixa(170, 280), modo: "azul" }),
+        a("ossos", 3, { modo: "azul" }),
+        a("mira", 3, { modo: "vermelha", cor: "#ffe14a" }),
+        a("cortina", 3, { cor: "#ff2040" }),
+        a("varredura", 3, { ...azul }),
+        a("ossos", 3, { modo: "vermelha", densidade: 1.2 }),
+        a("ponteiro", 4),
+        a("cerco", 4, { densidade: 1.3 }),
+      ], { cenario: LB3, esquiva: 70 }),
+      t("Fase 3 — Caixa viva", [
+        a("deriva", 12),
+        a("giratorio", 4, { densidade: 1.1 }),
+        a("canhao", 4, { inicio: 4 }),
+        a("ossos", 4, { inicio: 8, modo: "azul" }),
+      ], { ...juntos, cenario: LB3, esquiva: 45 }),
+      t("Fase 3 — Último suspiro", [
+        a("cerco", 3),
+        a("pancada", 3),
+        a("ossos", 2.5, { modo: "azul" }),
+        a("canhao", 2.5, { modo: "vermelha" }),
+        a("grade", 3),
+        a("corte", 3),
+        a("cortina", 2.5, { ...azul }),
+        a("cortina", 2.5, { ...laranja }),
+        a("plataformas", 4),
+        a("ponteiro", 3.5, { modo: "vermelha" }),
+        a("giratorio", 3, { ...laranja, ...caixa(110, 110) }),
+        a("estacas", 3, { ...caixa(80, 220) }),
+        a("laser", 2.5, { tamanho: 2.2, densidade: 0.7 }),
+        a("cruz", 3),
+        a("cerco", 4, { densidade: 1.4 }),
+      ], { cenario: { ...LB3, escuro: 0.65, tremor: 0.25 }, esquiva: 20 }),
     ],
   },
 ];
@@ -596,7 +741,7 @@ FANGAMES.push({
     t("Teia e mira", [a("teia", 4), a("mira", 4)], { intensidade: 1.15 }),
     t("Espadas em órbita", [a("orbita", 7), a("estilhacos", 7, { densidade: 0.6 })], { ...juntos, intensidade: 1.15 }),
     t("Final — Galáxia", [a("arena", 10), a("galaxia", 10)], { ...juntos, intensidade: 1.2, cenario: KN_FIM }),
-    t("Final — Constelação", [a("arena", 11), a("constelacao", 11), a("teia", 11, { densidade: 0.5 })], { ...juntos, intensidade: 1.25, cenario: KN_FIM }),
+    t("Final — Constelação", [a("arena", 11), a("constelacao", 11), a("teia", 11, { densidade: 0.5 }), a("mira", 11, { densidade: 0.5 })], { ...juntos, intensidade: 1.25, cenario: KN_FIM }),
   ],
 });
 

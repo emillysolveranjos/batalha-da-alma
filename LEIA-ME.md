@@ -59,8 +59,14 @@ galáxia de estrelas e constelação.
 bichinho faminto (bocarra no fundo da caixa), bombas e blocos (atirar na bomba solta uma explosão em cruz),
 globo de luz, golpe azul/laranja (a caixa toda), correntes em onda, raios com aviso de "!" e roda de fogo.
 
+**Escuridão (lanterna):** tudo escurece e só se enxerga perto da alma. Combine com outros ataques no modo simultâneo.
+
 Cada ataque pode ter a própria caixa (largura e altura, até 320 de altura): é assim que uma fase vira um corredor
 comprido, uma coluna estreita ou uma caixa alta.
+
+Em "Mais", cada ataque também pode trocar a **alma** enquanto roda (ex.: ossos com alma azul e, logo depois, canhões
+com a vermelha, tudo na mesma rodada). No modo simultâneo, **Começa em (s)** atrasa o início do ataque, para montar
+uma rodada longa coreografada.
 
 Nas fases intensas e nos disparos há clarão, tremida e aberração cromática (desligável no Cenário).
 
@@ -70,7 +76,11 @@ Paródias **só de moveset** de 44 lutas: os ataques, o modo da alma, o ritmo e 
 Não há arte, som, código ou fala dos jogos; a aparência do monstro e as falas ficam por conta do mestre.
 São aproximações. Foram montadas assistindo às lutas em vídeo, ataque por ataque: o **Kaizo Knight** (aba Fã, 16 fases)
 e as lutas principais do Undertale (Toriel, Mad Dummy, Muffet, Mettaton, Papyrus, Undyne, Undyne a Imortal, Asgore,
-Sans, Omega Flowey e Asriel). Os outros monstros e o Deltarune ainda são de memória.
+Sans, Omega Flowey e Asriel), o **Last Breath** e as lutas principais do Deltarune (Lancer, K. Round, Jevil, King,
+Queen, Spamton, Spamton NEO, Tenna, Roaring Knight, Hammer of Justice e Titan). Os monstros menores ainda são de memória.
+
+Cada luta mostra a **dificuldade** (★ a ★★★★). As fases foram balanceadas com um jogador robô que desvia com reação
+de gente: nenhuma fase deixa você passar parado, e nenhuma é impossível para o nível da luta.
 
 - **Carregar** troca monstro, alma, ataques, caixa e cenário. Sua música, itens e regras dos jogadores continuam.
 - As **fases** entram na lista de turnos, agrupadas e numeradas. Carregar outro preset troca as fases (seus turnos salvos ficam).
@@ -120,6 +130,10 @@ Extensão local: `http://localhost:5173/manifest.json`. Para testar sem o Owlbea
 
 - `http://localhost:5173/battle.html?ataque=cerco&modo=azul&hitbox` — um ataque, um modo de alma, hitboxes
 - `http://localhost:5173/battle.html?preset=sans&fase=3` — uma fase de um preset pronto
+
+Balanceamento: com o `npm run dev` aberto, no console do navegador
+`await (await import('/dev/balanco.ts')).ajustarTudo()` mede todas as fases e devolve a tabela `AJUSTE`
+de `src/presets.ts`. A pasta `dev/` não entra no build.
 
 ### Arquivos
 
